@@ -48,6 +48,7 @@ public:
 		SHADER_PARAMETER(		uint32,						NumChars)
 		SHADER_PARAMETER(		uint32,						NumLines)
 		SHADER_PARAMETER(		uint32,						NumWords)
+		SHADER_PARAMETER(		uint32,						bFilterWhitespaceCharactersValue)
 	END_SHADER_PARAMETER_STRUCT()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Font Asset"))
@@ -63,8 +64,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Vertical Alignment"))
 	ENTPTextVerticalAlignment VerticalAlignment = ENTPTextVerticalAlignment::NTP_TVA_Center;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Spawn Whitespace Characters"))
-	bool bSpawnWhitespaceCharacters = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Filter Whitespace Characters"))
+	bool bFilterWhitespaceCharacters = true;
 
 	//UObject Interface
 	virtual void PostInitProperties() override;
@@ -96,6 +97,8 @@ public:
 	void GetLineCharacterCountVM(FVectorVMExternalFunctionContext& Context);
 	void GetTextWordCountVM(FVectorVMExternalFunctionContext& Context);
 	void GetWordCharacterCountVM(FVectorVMExternalFunctionContext& Context);
+	void GetWordTrailingWhitespaceCountVM(FVectorVMExternalFunctionContext& Context);
+	void GetFilterWhitespaceCharactersVM(FVectorVMExternalFunctionContext& Context);
 
 private:
 	static const FName GetCharacterUVName;
@@ -105,6 +108,8 @@ private:
 	static const FName GetLineCharacterCountName;
 	static const FName GetTextWordCountName;
 	static const FName GetWordCharacterCountName;
+	static const FName GetWordTrailingWhitespaceCountName;
+	static const FName GetFilterWhitespaceCharactersName;
 
 	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector4>& UVRects, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment);
 	static TArray<FVector4> GetUVRectsFromFont(const UFont* FontAsset);

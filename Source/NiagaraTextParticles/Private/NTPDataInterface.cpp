@@ -31,6 +31,8 @@ const FName UNTPDataInterface::GetTextLineCountName(TEXT("GetTextLineCount"));
 const FName UNTPDataInterface::GetLineCharacterCountName(TEXT("GetLineCharacterCount"));
 const FName UNTPDataInterface::GetTextWordCountName(TEXT("GetTextWordCount"));
 const FName UNTPDataInterface::GetWordCharacterCountName(TEXT("GetWordCharacterCount"));
+const FName UNTPDataInterface::GetWordTrailingWhitespaceCountName(TEXT("GetWordTrailingWhitespaceCount"));
+const FName UNTPDataInterface::GetFilterWhitespaceCharactersName(TEXT("GetFilterWhitespaceCharacters"));
 
 // The struct used to store our data interface data
 struct FNDIFontUVInfoInstanceData
@@ -42,6 +44,7 @@ struct FNDIFontUVInfoInstanceData
 	TArray<int32> LineCharacterCounts;
 	TArray<int32> WordStartIndices;
 	TArray<int32> WordCharacterCounts;
+	bool bFilterWhitespaceCharactersValue = true;
 };
 
 // This proxy is used to safely copy data between game thread and render thread
@@ -62,6 +65,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 		uint32 NumChars = 0;
 		uint32 NumLines = 0;
 		uint32 NumWords = 0;
+		uint32 bFilterWhitespaceCharactersValue = 1;
 
 		void Release()
 		{
@@ -76,6 +80,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 			NumChars = 0;
 			NumLines = 0;
 			NumWords = 0;
+			bFilterWhitespaceCharactersValue = 1;
 		}
 	};
 
@@ -312,10 +317,11 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 			RHICmdList.UnlockBuffer(RTInstance.WordCharacterCountBuffer.Buffer);
 		}
 
-		// Copy line and word count
+		// Copy line and word count and flags
 		RTInstance.NumChars = (uint32)InstanceDataFromGT->Unicode.Num();
 		RTInstance.NumLines = (uint32)InstanceDataFromGT->LineStartIndices.Num();
 		RTInstance.NumWords = (uint32)InstanceDataFromGT->WordStartIndices.Num();
+		RTInstance.bFilterWhitespaceCharactersValue = InstanceDataFromGT->bFilterWhitespaceCharactersValue ? 1u : 0u;
 
 		// Call the destructor to clean up the GT data
 		InstanceDataFromGT->~FNDIFontUVInfoInstanceData();
@@ -333,6 +339,7 @@ bool UNTPDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 	FNDIFontUVInfoInstanceData* InstanceData = new (PerInstanceData) FNDIFontUVInfoInstanceData;
 
 	InstanceData->UVRects = GetUVRectsFromFont(FontAsset);
+	InstanceData->bFilterWhitespaceCharactersValue = bFilterWhitespaceCharacters;
 
 	TArray<FVector2f> CharacterPositionsUnfiltered = GetCharacterPositions(InstanceData->UVRects, InputText, HorizontalAlignment, VerticalAlignment);
 
@@ -343,13 +350,13 @@ bool UNTPDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 	TArray<int32> OutWordStartIndices;
 	TArray<int32> OutWordCharacterCounts;
 
-	if (bSpawnWhitespaceCharacters)
+	if (bFilterWhitespaceCharacters)
 	{
-		ProcessTextWithWhitespace(InputText, CharacterPositionsUnfiltered, OutUnicode, OutCharacterPositions, OutLineStartIndices, OutLineCharacterCounts, OutWordStartIndices, OutWordCharacterCounts);
+		ProcessTextWithoutWhitespace(InputText, CharacterPositionsUnfiltered, OutUnicode, OutCharacterPositions, OutLineStartIndices, OutLineCharacterCounts, OutWordStartIndices, OutWordCharacterCounts);
 	}
 	else
 	{
-		ProcessTextWithoutWhitespace(InputText, CharacterPositionsUnfiltered, OutUnicode, OutCharacterPositions, OutLineStartIndices, OutLineCharacterCounts, OutWordStartIndices, OutWordCharacterCounts);
+		ProcessTextWithWhitespace(InputText, CharacterPositionsUnfiltered, OutUnicode, OutCharacterPositions, OutLineStartIndices, OutLineCharacterCounts, OutWordStartIndices, OutWordCharacterCounts);
 	}
 
 	InstanceData->Unicode = MoveTemp(OutUnicode);
@@ -1066,6 +1073,29 @@ void UNTPDataInterface::GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunct
 	SigWordCharCount.AddInput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("WordIndex")));
 	SigWordCharCount.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("WordCharacterCount")));
 	OutFunctions.Add(SigWordCharCount);
+
+	// Register GetWordTrailingWhitespaceCount
+	FNiagaraFunctionSignature SigWordTrailingSpace;
+	SigWordTrailingSpace.Name = GetWordTrailingWhitespaceCountName;
+#if WITH_EDITORONLY_DATA
+	SigWordTrailingSpace.Description = LOCTEXT("GetWordTrailingWhitespaceCountDesc", "Returns the number of whitespace characters after the specified word index.");
+#endif
+	SigWordTrailingSpace.bMemberFunction = true;
+	SigWordTrailingSpace.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
+	SigWordTrailingSpace.AddInput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("WordIndex")));
+	SigWordTrailingSpace.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("TrailingWhitespaceCount")));
+	OutFunctions.Add(SigWordTrailingSpace);
+
+	// Register GetFilterWhitespaceCharacters
+	FNiagaraFunctionSignature SigFilterWhitespace;
+	SigFilterWhitespace.Name = GetFilterWhitespaceCharactersName;
+#if WITH_EDITORONLY_DATA
+	SigFilterWhitespace.Description = LOCTEXT("GetFilterWhitespaceCharactersDesc", "Returns 1 if this data interface is filtering whitespace characters, 0 otherwise.");
+#endif
+	SigFilterWhitespace.bMemberFunction = true;
+	SigFilterWhitespace.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
+	SigFilterWhitespace.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetBoolDef(), TEXT("FilterWhitespaceCharacters")));
+	OutFunctions.Add(SigFilterWhitespace);
 }
 
 void UNTPDataInterface::BuildShaderParameters(FNiagaraShaderParametersBuilder& ShaderParametersBuilder) const
@@ -1095,6 +1125,7 @@ void UNTPDataInterface::SetShaderParameters(const FNiagaraDataInterfaceSetShader
 		ShaderParameters->NumChars = RTData->NumChars;
 		ShaderParameters->NumLines = RTData->NumLines;
 		ShaderParameters->NumWords = RTData->NumWords;
+		ShaderParameters->bFilterWhitespaceCharactersValue = RTData->bFilterWhitespaceCharactersValue;
 	}
 	else
 	{
@@ -1109,6 +1140,7 @@ void UNTPDataInterface::SetShaderParameters(const FNiagaraDataInterfaceSetShader
 		ShaderParameters->NumChars = 0;
 		ShaderParameters->NumLines = 0;
 		ShaderParameters->NumWords = 0;
+		ShaderParameters->bFilterWhitespaceCharactersValue = bFilterWhitespaceCharacters ? 1u : 0u;
 	}
 }
 
@@ -1121,7 +1153,7 @@ bool UNTPDataInterface::CopyToInternal(UNiagaraDataInterface* Destination) const
 		DestTyped->InputText = InputText;
 		DestTyped->HorizontalAlignment = HorizontalAlignment;
 		DestTyped->VerticalAlignment = VerticalAlignment;
-		DestTyped->bSpawnWhitespaceCharacters = bSpawnWhitespaceCharacters;
+		DestTyped->bFilterWhitespaceCharacters = bFilterWhitespaceCharacters;
 		return true;
 	}
 	else
@@ -1139,7 +1171,7 @@ bool UNTPDataInterface::Equals(const UNiagaraDataInterface* Other) const
 		&& OtherTyped->InputText == InputText
 		&& OtherTyped->HorizontalAlignment == HorizontalAlignment
 		&& OtherTyped->VerticalAlignment == VerticalAlignment
-		&& OtherTyped->bSpawnWhitespaceCharacters == bSpawnWhitespaceCharacters;
+		&& OtherTyped->bFilterWhitespaceCharacters == bFilterWhitespaceCharacters;
 	UE_LOG(LogNiagaraTextParticles, Verbose, TEXT("NTP DI: Equals - ThisAsset=%s OtherAsset=%s Result=%s"),
 		*GetNameSafe(FontAsset),
 		OtherTyped ? *GetNameSafe(OtherTyped->FontAsset) : TEXT("nullptr"),
@@ -1183,6 +1215,16 @@ void UNTPDataInterface::GetVMExternalFunction(const FVMExternalFunctionBindingIn
 	else if (BindingInfo.Name == GetWordCharacterCountName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetWordCharacterCountVM(Context); });
+		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+	}
+	else if (BindingInfo.Name == GetWordTrailingWhitespaceCountName)
+	{
+		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetWordTrailingWhitespaceCountVM(Context); });
+		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+	}
+	else if (BindingInfo.Name == GetFilterWhitespaceCharactersName)
+	{
+		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetFilterWhitespaceCharactersVM(Context); });
 		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else
@@ -1367,6 +1409,55 @@ void UNTPDataInterface::GetWordCharacterCountVM(FVectorVMExternalFunctionContext
 	}
 }
 
+void UNTPDataInterface::GetWordTrailingWhitespaceCountVM(FVectorVMExternalFunctionContext& Context)
+{
+	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
+	FNDIInputParam<int32> InWordIndex(Context);
+	FNDIOutputParam<int32> OutTrailingWhitespaceCount(Context);
+
+	const TArray<int32>& WordStartIndices = InstData.Get()->WordStartIndices;
+	const TArray<int32>& WordCharacterCounts = InstData.Get()->WordCharacterCounts;
+	const int32 NumWords = WordStartIndices.Num();
+	const int32 TotalChars = InstData.Get()->Unicode.Num();
+
+	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
+	{
+		int32 WordIndex = InWordIndex.GetAndAdvance();
+
+		if (NumWords > 0 && WordIndex >= 0 && WordIndex < NumWords && WordCharacterCounts.IsValidIndex(WordIndex) && WordStartIndices.IsValidIndex(WordIndex))
+		{
+			int32 EndOfWordIndex = WordStartIndices[WordIndex] + WordCharacterCounts[WordIndex];
+			int32 NextWordStartIndex = TotalChars;
+
+			// If it's not the last word, get the start of the next word
+			if (WordIndex < NumWords - 1 && WordStartIndices.IsValidIndex(WordIndex + 1))
+			{
+				NextWordStartIndex = WordStartIndices[WordIndex + 1];
+			}
+
+			int32 TrailingSpace = FMath::Max(0, NextWordStartIndex - EndOfWordIndex);
+			OutTrailingWhitespaceCount.SetAndAdvance(TrailingSpace);
+		}
+		else
+		{
+			OutTrailingWhitespaceCount.SetAndAdvance(0);
+		}
+	}
+}
+
+void UNTPDataInterface::GetFilterWhitespaceCharactersVM(FVectorVMExternalFunctionContext& Context)
+{
+	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
+	FNDIOutputParam<bool> OutFilter(Context);
+
+	const bool bValue = InstData.Get()->bFilterWhitespaceCharactersValue;
+
+	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
+	{
+		OutFilter.SetAndAdvance(bValue);
+	}
+}
+
 #if WITH_EDITORONLY_DATA
 
 bool UNTPDataInterface::AppendCompileHash(FNiagaraCompileHashVisitor* InVisitor) const
@@ -1388,7 +1479,9 @@ bool UNTPDataInterface::GetFunctionHLSL(const FNiagaraDataInterfaceGPUParamInfo&
 		|| FunctionInfo.DefinitionName == GetTextLineCountName
 		|| FunctionInfo.DefinitionName == GetLineCharacterCountName
 		|| FunctionInfo.DefinitionName == GetTextWordCountName
-		|| FunctionInfo.DefinitionName == GetWordCharacterCountName;
+		|| FunctionInfo.DefinitionName == GetWordCharacterCountName
+		|| FunctionInfo.DefinitionName == GetWordTrailingWhitespaceCountName
+		|| FunctionInfo.DefinitionName == GetFilterWhitespaceCharactersName;
 }
 
 void UNTPDataInterface::GetParameterDefinitionHLSL(const FNiagaraDataInterfaceGPUParamInfo& ParamInfo, FString& OutHLSL)

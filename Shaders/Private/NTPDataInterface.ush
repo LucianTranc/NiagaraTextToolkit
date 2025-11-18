@@ -17,6 +17,7 @@ StructuredBuffer<uint>  {ParameterName}_WordCharacterCounts; // Spawnable charac
 uint {ParameterName}_NumChars;                               // Total spawnable character count
 uint {ParameterName}_NumLines;                               // Total lines
 uint {ParameterName}_NumWords;                               // Total words
+uint {ParameterName}_bFilterWhitespaceCharactersValue;       // 1 if filtering whitespace characters, 0 otherwise
 
 
 void GetCharacterUV_{ParameterName}(in int In_CharacterIndex, out float Out_USize, out float Out_VSize, out float Out_UStart, out float Out_VStart)
@@ -105,4 +106,36 @@ void GetWordCharacterCount_{ParameterName}(in int In_WordIndex, out int Out_Word
 	}
 }
 
+// Returns the number of whitespace characters after the specified word index
+void GetWordTrailingWhitespaceCount_{ParameterName}(in int In_WordIndex, out int Out_TrailingWhitespaceCount)
+{
+	int NumWords = int({ParameterName}_NumWords);
+	
+	if (In_WordIndex >= 0 && In_WordIndex < NumWords)
+	{
+		int StartIndex = int({ParameterName}_WordStartIndices[In_WordIndex]);
+		int Count = int({ParameterName}_WordCharacterCounts[In_WordIndex]);
+		int EndIndex = StartIndex + Count;
+		
+		int NextStartIndex = int({ParameterName}_NumChars);
+		
+		// If not last word
+		if (In_WordIndex < NumWords - 1)
+		{
+			NextStartIndex = int({ParameterName}_WordStartIndices[In_WordIndex + 1]);
+		}
+		
+		int Gap = NextStartIndex - EndIndex;
+		Out_TrailingWhitespaceCount = max(0, Gap);
+	}
+	else
+	{
+		Out_TrailingWhitespaceCount = 0;
+	}
+}
 
+// Returns true if this DI is filtering whitespace characters, false otherwise
+void GetFilterWhitespaceCharacters_{ParameterName}(out bool Out_FilterWhitespaceCharacters)
+{
+	Out_FilterWhitespaceCharacters = ({ParameterName}_bFilterWhitespaceCharactersValue != 0);
+}
