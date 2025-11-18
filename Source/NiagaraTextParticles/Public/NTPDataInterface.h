@@ -43,8 +43,11 @@ public:
 		SHADER_PARAMETER_SRV(	Buffer<float2>,				CharacterPositions)
 		SHADER_PARAMETER_SRV(	Buffer<uint>,				LineStartIndices)
 		SHADER_PARAMETER_SRV(	Buffer<uint>,				LineCharacterCounts)
+		SHADER_PARAMETER_SRV(	Buffer<uint>,				WordStartIndices)
+		SHADER_PARAMETER_SRV(	Buffer<uint>,				WordCharacterCounts)
 		SHADER_PARAMETER(		uint32,						NumChars)
 		SHADER_PARAMETER(		uint32,						NumLines)
+		SHADER_PARAMETER(		uint32,						NumWords)
 	END_SHADER_PARAMETER_STRUCT()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Font Asset"))
@@ -61,7 +64,7 @@ public:
 	ENTPTextVerticalAlignment VerticalAlignment = ENTPTextVerticalAlignment::NTP_TVA_Center;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Spawn Whitespace Characters"))
-	bool SpawnWhitespaceCharacters = false;
+	bool bSpawnWhitespaceCharacters = false;
 
 	//UObject Interface
 	virtual void PostInitProperties() override;
@@ -91,6 +94,8 @@ public:
 	void GetTextCharacterCountVM(FVectorVMExternalFunctionContext& Context);
 	void GetTextLineCountVM(FVectorVMExternalFunctionContext& Context);
 	void GetLineCharacterCountVM(FVectorVMExternalFunctionContext& Context);
+	void GetTextWordCountVM(FVectorVMExternalFunctionContext& Context);
+	void GetWordCharacterCountVM(FVectorVMExternalFunctionContext& Context);
 
 private:
 	static const FName GetCharacterUVName;
@@ -98,8 +103,11 @@ private:
 	static const FName GetTextCharacterCountName;
 	static const FName GetTextLineCountName;
 	static const FName GetLineCharacterCountName;
+	static const FName GetTextWordCountName;
+	static const FName GetWordCharacterCountName;
 
 	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector4>& UVRects, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment);
+	static TArray<FVector4> GetUVRectsFromFont(const UFont* FontAsset);
 	static void BuildHorizontalLineMetrics(const TArray<FVector4>& UVRects, const TArray<TArray<int32>>& Lines, TArray<TArray<float>>& OutCumulativeWidthsPerCharacter);
 	static void BuildVerticalLineMetrics(const TArray<FVector4>& UVRects, const TArray<TArray<int32>>& Lines, TArray<float>& OutCumulativeHeightsPerLine, float& OutLineHeight);
 	static TArray<float> GetHorizontalPositionsLeftAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
@@ -108,6 +116,28 @@ private:
 	static TArray<float> GetVerticalPositionsTopAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
 	static TArray<float> GetVerticalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
 	static TArray<float> GetVerticalPositionsBottomAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
+
+	static void ProcessTextWithWhitespace(
+		const FString& InputText,
+		const TArray<FVector2f>& CharacterPositionsUnfiltered,
+		TArray<int32>& OutUnicode,
+		TArray<FVector2f>& OutCharacterPositions,
+		TArray<int32>& OutLineStartIndices,
+		TArray<int32>& OutLineCharacterCounts,
+		TArray<int32>& OutWordStartIndices,
+		TArray<int32>& OutWordCharacterCounts
+	);
+
+	static void ProcessTextWithoutWhitespace(
+		const FString& InputText,
+		const TArray<FVector2f>& CharacterPositionsUnfiltered,
+		TArray<int32>& OutUnicode,
+		TArray<FVector2f>& OutCharacterPositions,
+		TArray<int32>& OutLineStartIndices,
+		TArray<int32>& OutLineCharacterCounts,
+		TArray<int32>& OutWordStartIndices,
+		TArray<int32>& OutWordCharacterCounts
+	);
 
 };
 

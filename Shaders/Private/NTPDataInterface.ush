@@ -12,7 +12,11 @@ StructuredBuffer<uint>  {ParameterName}_TextUnicode;
 StructuredBuffer<float2> {ParameterName}_CharacterPositions;
 StructuredBuffer<uint>  {ParameterName}_LineStartIndices;    // First spawnable index per line (or 0 if none)
 StructuredBuffer<uint>  {ParameterName}_LineCharacterCounts; // Spawnable characters per line
+StructuredBuffer<uint>  {ParameterName}_WordStartIndices;    // First spawnable index per word
+StructuredBuffer<uint>  {ParameterName}_WordCharacterCounts; // Spawnable characters per word
 uint {ParameterName}_NumChars;                               // Total spawnable character count
+uint {ParameterName}_NumLines;                               // Total lines
+uint {ParameterName}_NumWords;                               // Total words
 
 
 void GetCharacterUV_{ParameterName}(in int In_CharacterIndex, out float Out_USize, out float Out_VSize, out float Out_UStart, out float Out_VStart)
@@ -79,6 +83,25 @@ void GetLineCharacterCount_{ParameterName}(in int In_LineIndex, out int Out_Line
 	else
 	{
 		Out_LineCharacterCount = 0;
+	}
+}
+
+// Returns the total number of words in InputText
+void GetTextWordCount_{ParameterName}(out int Out_WordCount)
+{
+	Out_WordCount = int({ParameterName}_NumWords);
+}
+
+// Returns the number of characters in the specified word index
+void GetWordCharacterCount_{ParameterName}(in int In_WordIndex, out int Out_WordCharacterCount)
+{
+	if (In_WordIndex >= 0 && In_WordIndex < int({ParameterName}_NumWords))
+	{
+		Out_WordCharacterCount = int({ParameterName}_WordCharacterCounts[In_WordIndex]);
+	}
+	else
+	{
+		Out_WordCharacterCount = 0;
 	}
 }
 
