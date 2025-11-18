@@ -10,9 +10,9 @@ uint {ParameterName}_NumRects;
 // Additional buffers for text metrics
 StructuredBuffer<uint>  {ParameterName}_TextUnicode;
 StructuredBuffer<float2> {ParameterName}_CharacterPositions;
-StructuredBuffer<uint>  {ParameterName}_LineStartIndices;
-StructuredBuffer<uint>  {ParameterName}_LineCharacterCounts;
-uint {ParameterName}_NumChars;
+StructuredBuffer<uint>  {ParameterName}_LineStartIndices;    // First spawnable index per line (or 0 if none)
+StructuredBuffer<uint>  {ParameterName}_LineCharacterCounts; // Spawnable characters per line
+uint {ParameterName}_NumChars;                               // Total spawnable character count
 
 
 void GetCharacterUV_{ParameterName}(in int In_CharacterIndex, out float Out_USize, out float Out_VSize, out float Out_UStart, out float Out_VStart)

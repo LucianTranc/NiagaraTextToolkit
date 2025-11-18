@@ -16,6 +16,14 @@ DEFINE_LOG_CATEGORY(LogNiagaraTextParticles);
 
 static const TCHAR* FontUVTemplateShaderFile = TEXT("/Plugin/NiagaraTextParticles/Private/NTPDataInterface.ush");
 
+static bool IsWhitespaceChar(int32 Code)
+{
+	return Code == ' '
+		|| Code == '\t'
+		|| Code == '\n'
+		|| Code == '\r';
+}
+
 const FName UNTPDataInterface::GetCharacterUVName(TEXT("GetCharacterUV"));
 const FName UNTPDataInterface::GetCharacterPositionName(TEXT("GetCharacterPosition"));
 const FName UNTPDataInterface::GetTextCharacterCountName(TEXT("GetTextCharacterCount"));
@@ -67,27 +75,27 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 	FRWBufferStructured DefaultFloatBuffer;
 	bool bDefaultInitialized = false;
 
-	void EnsureDefaultBuffer()
+	void EnsureDefaultBuffer(FRHICommandListBase& RHICmdList)
 	{
 		if (!bDefaultInitialized)
 		{
-			DefaultUVRectsBuffer.Initialize(TEXT("NTP_UVRects_Default"), sizeof(FVector4f), 1, BUF_ShaderResource | BUF_Static);
+			DefaultUVRectsBuffer.Initialize(RHICmdList, TEXT("NTP_UVRects_Default"), sizeof(FVector4f), 1, BUF_ShaderResource | BUF_Static);
 			const FVector4f Zero(0, 0, 0, 0);
-			void* Dest = RHILockBuffer(DefaultUVRectsBuffer.Buffer, 0, sizeof(FVector4f), RLM_WriteOnly);
+			void* Dest = RHICmdList.LockBuffer(DefaultUVRectsBuffer.Buffer, 0, sizeof(FVector4f), RLM_WriteOnly);
 			FMemory::Memcpy(Dest, &Zero, sizeof(FVector4f));
-			RHIUnlockBuffer(DefaultUVRectsBuffer.Buffer);
+			RHICmdList.UnlockBuffer(DefaultUVRectsBuffer.Buffer);
 
-			DefaultUIntBuffer.Initialize(TEXT("NTP_UInt_Default"), sizeof(uint32), 1, BUF_ShaderResource | BUF_Static);
+			DefaultUIntBuffer.Initialize(RHICmdList, TEXT("NTP_UInt_Default"), sizeof(uint32), 1, BUF_ShaderResource | BUF_Static);
 			uint32 ZeroU = 0;
-			void* DestU = RHILockBuffer(DefaultUIntBuffer.Buffer, 0, sizeof(uint32), RLM_WriteOnly);
+			void* DestU = RHICmdList.LockBuffer(DefaultUIntBuffer.Buffer, 0, sizeof(uint32), RLM_WriteOnly);
 			FMemory::Memcpy(DestU, &ZeroU, sizeof(uint32));
-			RHIUnlockBuffer(DefaultUIntBuffer.Buffer);
+			RHICmdList.UnlockBuffer(DefaultUIntBuffer.Buffer);
 
-			DefaultFloatBuffer.Initialize(TEXT("NTP_Float2_Default"), sizeof(FVector2f), 1, BUF_ShaderResource | BUF_Static);
+			DefaultFloatBuffer.Initialize(RHICmdList, TEXT("NTP_Float2_Default"), sizeof(FVector2f), 1, BUF_ShaderResource | BUF_Static);
 			const FVector2f ZeroF2(0.0f, 0.0f);
-			void* DestF = RHILockBuffer(DefaultFloatBuffer.Buffer, 0, sizeof(FVector2f), RLM_WriteOnly);
+			void* DestF = RHICmdList.LockBuffer(DefaultFloatBuffer.Buffer, 0, sizeof(FVector2f), RLM_WriteOnly);
 			FMemory::Memcpy(DestF, &ZeroF2, sizeof(FVector2f));
-			RHIUnlockBuffer(DefaultFloatBuffer.Buffer);
+			RHICmdList.UnlockBuffer(DefaultFloatBuffer.Buffer);
 			bDefaultInitialized = true;
 		}
 	}
@@ -110,13 +118,15 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 		FNDIFontUVInfoInstanceData* InstanceDataFromGT = static_cast<FNDIFontUVInfoInstanceData*>(PerInstanceData);
 		FRTInstanceData& RTInstance = SystemInstancesToInstanceData_RT.FindOrAdd(InstanceID);
 
+		FRHICommandListImmediate& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
+
 		// Upload / rebuild structured buffer on RT
 		const int32 NumRects = InstanceDataFromGT->UVRects.Num();
 		RTInstance.Release();
 		const uint32 Stride = sizeof(FVector4f);
 		const uint32 Count  = FMath::Max(NumRects, 1);
 		RTInstance.NumRects = (uint32)NumRects;
-		RTInstance.UVRectsBuffer.Initialize(TEXT("NTP_UVRects"), Stride, Count, BUF_ShaderResource | BUF_Static);
+		RTInstance.UVRectsBuffer.Initialize(RHICmdList, TEXT("NTP_UVRects"), Stride, Count, BUF_ShaderResource | BUF_Static);
 
 		const uint32 NumBytes = Stride * Count;
 		// Convert to float4 to match HLSL StructuredBuffer<float4>
@@ -135,9 +145,9 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 			TempFloatRects[0] = FVector4f(0, 0, 0, 0);
 		}
 
-		void* Dest = RHILockBuffer(RTInstance.UVRectsBuffer.Buffer, 0, NumBytes, RLM_WriteOnly);
+		void* Dest = RHICmdList.LockBuffer(RTInstance.UVRectsBuffer.Buffer, 0, NumBytes, RLM_WriteOnly);
 		FMemory::Memcpy(Dest, TempFloatRects.GetData(), NumBytes);
-		RHIUnlockBuffer(RTInstance.UVRectsBuffer.Buffer);
+		RHICmdList.UnlockBuffer(RTInstance.UVRectsBuffer.Buffer);
 
 		// Upload Unicode buffer
 		{
@@ -145,7 +155,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 			RTInstance.NumChars = (uint32)NumChars;
 			const uint32 UIntStride = sizeof(uint32);
 			const uint32 UIntCount  = FMath::Max(NumChars, 1);
-			RTInstance.UnicodeBuffer.Initialize(TEXT("NTP_Unicode"), UIntStride, UIntCount, BUF_ShaderResource | BUF_Static);
+			RTInstance.UnicodeBuffer.Initialize(RHICmdList, TEXT("NTP_Unicode"), UIntStride, UIntCount, BUF_ShaderResource | BUF_Static);
 
 			TArray<uint32> TempUInts;
 			TempUInts.SetNumUninitialized(UIntCount);
@@ -161,9 +171,9 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 				TempUInts[0] = 0;
 			}
 
-			void* DestU = RHILockBuffer(RTInstance.UnicodeBuffer.Buffer, 0, UIntStride * UIntCount, RLM_WriteOnly);
+			void* DestU = RHICmdList.LockBuffer(RTInstance.UnicodeBuffer.Buffer, 0, UIntStride * UIntCount, RLM_WriteOnly);
 			FMemory::Memcpy(DestU, TempUInts.GetData(), UIntStride * UIntCount);
-			RHIUnlockBuffer(RTInstance.UnicodeBuffer.Buffer);
+			RHICmdList.UnlockBuffer(RTInstance.UnicodeBuffer.Buffer);
 		}
 
 		// Upload character positions buffer
@@ -171,7 +181,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 			const int32 NumPositions = InstanceDataFromGT->CharacterPositions.Num();
 			const uint32 FStride = sizeof(FVector2f);
 			const uint32 FCount  = FMath::Max(NumPositions, 1);
-			RTInstance.CharacterPositionsBuffer.Initialize(TEXT("NTP_CharacterPositions"), FStride, FCount, BUF_ShaderResource | BUF_Static);
+			RTInstance.CharacterPositionsBuffer.Initialize(RHICmdList, TEXT("NTP_CharacterPositions"), FStride, FCount, BUF_ShaderResource | BUF_Static);
 
 			TArray<FVector2f> TempVectors;
 			TempVectors.SetNumUninitialized(FCount);
@@ -184,9 +194,9 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 				TempVectors[0] = FVector2f(0.0f, 0.0f);
 			}
 
-			void* DestF = RHILockBuffer(RTInstance.CharacterPositionsBuffer.Buffer, 0, FStride * FCount, RLM_WriteOnly);
+			void* DestF = RHICmdList.LockBuffer(RTInstance.CharacterPositionsBuffer.Buffer, 0, FStride * FCount, RLM_WriteOnly);
 			FMemory::Memcpy(DestF, TempVectors.GetData(), FStride * FCount);
-			RHIUnlockBuffer(RTInstance.CharacterPositionsBuffer.Buffer);
+			RHICmdList.UnlockBuffer(RTInstance.CharacterPositionsBuffer.Buffer);
 		}
 
 		// Upload line start indices buffer
@@ -194,7 +204,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 			const int32 NumLineStartIndices = InstanceDataFromGT->LineStartIndices.Num();
 			const uint32 LStride = sizeof(uint32);
 			const uint32 LCount  = FMath::Max(NumLineStartIndices, 1);
-			RTInstance.LineStartIndicesBuffer.Initialize(TEXT("NTP_LineStartIndices"), LStride, LCount, BUF_ShaderResource | BUF_Static);
+			RTInstance.LineStartIndicesBuffer.Initialize(RHICmdList, TEXT("NTP_LineStartIndices"), LStride, LCount, BUF_ShaderResource | BUF_Static);
 
 			TArray<uint32> TempLineStartIndices;
 			TempLineStartIndices.SetNumUninitialized(LCount);
@@ -210,9 +220,9 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 				TempLineStartIndices[0] = 0;
 			}
 
-			void* DestL = RHILockBuffer(RTInstance.LineStartIndicesBuffer.Buffer, 0, LStride * LCount, RLM_WriteOnly);
+			void* DestL = RHICmdList.LockBuffer(RTInstance.LineStartIndicesBuffer.Buffer, 0, LStride * LCount, RLM_WriteOnly);
 			FMemory::Memcpy(DestL, TempLineStartIndices.GetData(), LStride * LCount);
-			RHIUnlockBuffer(RTInstance.LineStartIndicesBuffer.Buffer);
+			RHICmdList.UnlockBuffer(RTInstance.LineStartIndicesBuffer.Buffer);
 		}
 
 		// Upload per-line character counts buffer
@@ -220,7 +230,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 			const int32 NumLineCounts = InstanceDataFromGT->LineCharacterCounts.Num();
 			const uint32 CStride = sizeof(uint32);
 			const uint32 CCount  = FMath::Max(NumLineCounts, 1);
-			RTInstance.LineCharacterCountBuffer.Initialize(TEXT("NTP_LineCharacterCounts"), CStride, CCount, BUF_ShaderResource | BUF_Static);
+			RTInstance.LineCharacterCountBuffer.Initialize(RHICmdList, TEXT("NTP_LineCharacterCounts"), CStride, CCount, BUF_ShaderResource | BUF_Static);
 
 			TArray<uint32> TempLineCounts;
 			TempLineCounts.SetNumUninitialized(CCount);
@@ -236,9 +246,9 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 				TempLineCounts[0] = 0;
 			}
 
-			void* DestC = RHILockBuffer(RTInstance.LineCharacterCountBuffer.Buffer, 0, CStride * CCount, RLM_WriteOnly);
+			void* DestC = RHICmdList.LockBuffer(RTInstance.LineCharacterCountBuffer.Buffer, 0, CStride * CCount, RLM_WriteOnly);
 			FMemory::Memcpy(DestC, TempLineCounts.GetData(), CStride * CCount);
-			RHIUnlockBuffer(RTInstance.LineCharacterCountBuffer.Buffer);
+			RHICmdList.UnlockBuffer(RTInstance.LineCharacterCountBuffer.Buffer);
 		}
 
 		// Copy line count
@@ -283,60 +293,160 @@ bool UNTPDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 		InstanceData->UVRects.Empty();
 	}
 
-	// Build Unicode from InputText
+	TArray<FVector2f> CharacterPositionsUnfiltered = GetCharacterPositions(InstanceData->UVRects, InputText, HorizontalAlignment, VerticalAlignment);
+
+	InstanceData->CharacterPositions.Reset();
+	InstanceData->CharacterPositions.Reserve(InputText.Len());
+
 	InstanceData->Unicode.Reset();
-	if (!InputText.IsEmpty())
+	InstanceData->Unicode.Reserve(InputText.Len());
+
+	InstanceData->LineStartIndices.Reset();
+	InstanceData->LineStartIndices.Add(0); // First line always starts at index 0 in the filtered array
+
+	int32 FilteredIndex = 0;
+	int32 i = 0;
+
+	while (i < InputText.Len())
 	{
-		InstanceData->Unicode.Reserve(InputText.Len());
-		for (int32 i = 0; i < InputText.Len(); ++i)
+		const int32 Code = (int32)InputText[i];
+
+		// Handle newline characters: '\n'
+		if (Code == '\n')
 		{
-			InstanceData->Unicode.Add((int32)InputText[i]);
-			// log the unicode
-			UE_LOG(LogNiagaraTextParticles, Warning, TEXT("NTP DI: InitPerInstanceData - Unicode[%d] = %d"), i, InstanceData->Unicode[i]);
+			if (SpawnWhitespaceCharacters)
+			{
+				InstanceData->Unicode.Add(Code);
+				InstanceData->CharacterPositions.Add(CharacterPositionsUnfiltered[i]);
+				++FilteredIndex;
+			}
+
+			// Next kept character (if any) will be the start of a new line
+			InstanceData->LineStartIndices.Add(FilteredIndex);
+			++i;
+			continue;
+		}
+		// Handle carriage return characters: '\r' and optional "\r\n"
+		else if (Code == '\r')
+		{
+			if (SpawnWhitespaceCharacters)
+			{
+				InstanceData->Unicode.Add(Code);
+				InstanceData->CharacterPositions.Add(CharacterPositionsUnfiltered[i]);
+				++FilteredIndex;
+			}
+			++i;
+
+			// If this is a "\r\n" pair, consume the '\n' so it is not treated as a second newline
+			if (i < InputText.Len() && InputText[i] == '\n')
+			{
+				if (SpawnWhitespaceCharacters)
+				{
+					InstanceData->Unicode.Add('\n');
+					InstanceData->CharacterPositions.Add(CharacterPositionsUnfiltered[i]);
+					++FilteredIndex;
+				}
+				++i;
+			}
+
+			InstanceData->LineStartIndices.Add(FilteredIndex);
+			continue;
+		}
+		// Skip non-newline whitespace: space and tab (only if not spawning)
+		else if (!SpawnWhitespaceCharacters && (Code == ' ' || Code == '\t'))
+		{
+			++i;
+			continue;
+		}
+		// Regular character (or whitespace if we are spawning)
+		else
+		{
+			InstanceData->Unicode.Add(Code);
+			InstanceData->CharacterPositions.Add(CharacterPositionsUnfiltered[i]);
+			++FilteredIndex;
+			++i;
 		}
 	}
 
-	const int32 NumChars = InstanceData->Unicode.Num();
+	InstanceData->NumLines = InstanceData->LineStartIndices.Num();
 
-	// This is where we need to calculate the character positions
-	// We should start by building a 2d array of unicode values, where each inner array represents a line of text
-	// We need to split the text into lines based on the newline character
-	// newline characters can either be \n or \r\n. We need to handle both cases.
-	// We can't discard the new line characters since that would throw off the indexing, so we leave them at the end of each line
+	// calculate LineCharacterCount using the difference in lineStartIndices
+
+	InstanceData->LineCharacterCounts.Reset();
+	InstanceData->LineCharacterCounts.Reserve(InstanceData->LineStartIndices.Num());
+	for (int32 LineIdx = 0; LineIdx < InstanceData->LineStartIndices.Num(); ++LineIdx)
+	{
+		if (LineIdx < InstanceData->LineStartIndices.Num() - 1)
+		{
+			InstanceData->LineCharacterCounts.Add(InstanceData->LineStartIndices[LineIdx + 1] - InstanceData->LineStartIndices[LineIdx]);
+		}
+		else
+		{
+			InstanceData->LineCharacterCounts.Add(InstanceData->Unicode.Num() - InstanceData->LineStartIndices[LineIdx]);
+		}
+	}
+
+	UE_LOG(LogNiagaraTextParticles, Warning,
+		TEXT("NTP DI: InitPerInstanceData - FullChars=%d, SpawnableChars=%d, NumLines=%d"),
+		InputText.Len(),
+		InstanceData->Unicode.Num(),
+		InstanceData->NumLines);
+
+	return true;
+}
+
+TArray<FVector2f> UNTPDataInterface::GetCharacterPositions(const TArray<FVector4>& UVRects, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment)
+{
+	// Build Unicode from InputText
+	TArray<int32> UnicodeUnfiltered;
+	UnicodeUnfiltered.Reset();
+	if (!InputString.IsEmpty())
+	{
+		UnicodeUnfiltered.Reserve(InputString.Len());
+		for (int32 i = 0; i < InputString.Len(); ++i)
+		{
+			const int32 Code = (int32)InputString[i];
+			UnicodeUnfiltered.Add(Code);
+			// log the unicode
+			UE_LOG(LogNiagaraTextParticles, Warning, TEXT("NTP DI: InitPerInstanceData - UnicodeFull[%d] = %d"), i, Code);
+		}
+	}
+
+	const int32 NumCharsUnfiltered = UnicodeUnfiltered.Num();
 
 	// Build 2D array of unicode values split by lines
-	TArray<TArray<int32>> Lines;
-	if (NumChars > 0)
+	TArray<TArray<int32>> LinesUnfiltered;
+	if (NumCharsUnfiltered > 0)
 	{
 		TArray<int32> CurrentLine;
 		
-		for (int32 i = 0; i < NumChars; ++i)
+		for (int32 i = 0; i < NumCharsUnfiltered; ++i)
 		{
-			const int32 Code = InstanceData->Unicode[i];
+			const int32 Code = UnicodeUnfiltered[i];
 			CurrentLine.Add(Code);
 			
 			// Check for newline characters
 			if (Code == '\r') // CR (old Mac or part of CRLF)
 			{
 				// Check if next character is '\n' (CRLF)
-				if (i + 1 < NumChars && InstanceData->Unicode[i + 1] == '\n')
+				if (i + 1 < NumCharsUnfiltered && UnicodeUnfiltered[i + 1] == '\n')
 				{
 					// This is CRLF, add the '\n' to current line as well
 					CurrentLine.Add('\n');
 					i++; // Skip the '\n' in next iteration
-					Lines.Add(CurrentLine);
+					LinesUnfiltered.Add(CurrentLine);
 					CurrentLine.Reset();
 				}
 				else
 				{
 					// This is standalone CR (old Mac format)
-					Lines.Add(CurrentLine);
+					LinesUnfiltered.Add(CurrentLine);
 					CurrentLine.Reset();
 				}
 			}
 			else if (Code == '\n') // LF (Unix/Mac/Windows, standalone)
 			{
-				Lines.Add(CurrentLine);
+				LinesUnfiltered.Add(CurrentLine);
 				CurrentLine.Reset();
 			}
 		}
@@ -344,116 +454,77 @@ bool UNTPDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 		// Add the last line if it's not empty (or if text doesn't end with newline)
 		if (!CurrentLine.IsEmpty())
 		{
-			Lines.Add(CurrentLine);
+			LinesUnfiltered.Add(CurrentLine);
 		}
 	}
 
-	const int32 NumLines = Lines.Num();
-	InstanceData->NumLines = NumLines;
+	const int32 NumLinesUnfiltered = LinesUnfiltered.Num();
 
-	// Build per-line start indices (character index where each line starts)
-	InstanceData->LineStartIndices.Reset();
-	if (NumLines > 0)
-	{
-		InstanceData->LineStartIndices.Reserve(NumLines);
-		int32 CurrentCharIndex = 0;
-		for (int32 LineIndex = 0; LineIndex < NumLines; ++LineIndex)
-		{
-			InstanceData->LineStartIndices.Add(CurrentCharIndex);
-			CurrentCharIndex += Lines[LineIndex].Num();
-		}
-	}
-
-	// debug log the lines array
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		FString LineStr;
-		const TArray<int32>& Line = Lines[i];
-		for (int32 j = 0; j < Line.Num(); ++j)
-		{
-			if (j > 0) LineStr += TEXT(", ");
-			LineStr += FString::Printf(TEXT("%d"), Line[j]);
-		}
-		UE_LOG(LogNiagaraTextParticles, Warning, TEXT("NTP DI: InitPerInstanceData - Line[%d] (%d chars, start=%d) = [%s]"), i, Line.Num(), InstanceData->LineStartIndices[i], *LineStr);
-	}
-
-	// Build per-line character counts
-	InstanceData->LineCharacterCounts.Reset();
-	if (NumLines > 0)
-	{
-		InstanceData->LineCharacterCounts.Reserve(NumLines);
-		for (int32 LineIndex = 0; LineIndex < NumLines; ++LineIndex)
-		{
-			InstanceData->LineCharacterCounts.Add(Lines[LineIndex].Num());
-		}
-	}
-
+	// Horizontal positions based on full text layout
 	TArray<float> HorizontalPositions;
-	HorizontalPositions.Reserve(NumChars);
-	if (NumLines > 0)
+	HorizontalPositions.Reserve(NumCharsUnfiltered);
+	if (NumLinesUnfiltered > 0)
 	{
-		switch (HorizontalAlignment)
+		switch (XAlignment)
 		{
 			case ENTPTextHorizontalAlignment::NTP_THA_Left:
 			{
-				HorizontalPositions = GetHorizontalPositionsLeftAligned(InstanceData->UVRects, InstanceData->Unicode, Lines);
+				HorizontalPositions = GetHorizontalPositionsLeftAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
 				break;
 			}
 			case ENTPTextHorizontalAlignment::NTP_THA_Center:
 			{
-				HorizontalPositions = GetHorizontalPositionsCenterAligned(InstanceData->UVRects, InstanceData->Unicode, Lines);
+				HorizontalPositions = GetHorizontalPositionsCenterAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
 				break;
 			}
 			case ENTPTextHorizontalAlignment::NTP_THA_Right:
 			{
-				HorizontalPositions = GetHorizontalPositionsRightAligned(InstanceData->UVRects, InstanceData->Unicode, Lines);
+				HorizontalPositions = GetHorizontalPositionsRightAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
 				break;
 			}
 		}
 	}
 
 
+	// Vertical positions based on full text layout
 	TArray<float> VerticalPositions;
-	VerticalPositions.Reserve(NumChars);
-	if (NumLines > 0)
+	VerticalPositions.Reserve(NumCharsUnfiltered);
+	if (NumLinesUnfiltered > 0)
 	{
-		switch (VerticalAlignment)
+		switch (YAlignment)
 		{
 			case ENTPTextVerticalAlignment::NTP_TVA_Top:
 			{
-				VerticalPositions = GetVerticalPositionsTopAligned(InstanceData->UVRects, InstanceData->Unicode, Lines);
+				VerticalPositions = GetVerticalPositionsTopAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
 				break;
 			}
 			case ENTPTextVerticalAlignment::NTP_TVA_Center:
 			{
-				VerticalPositions = GetVerticalPositionsCenterAligned(InstanceData->UVRects, InstanceData->Unicode, Lines);
+				VerticalPositions = GetVerticalPositionsCenterAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
 				break;
 			}
 			case ENTPTextVerticalAlignment::NTP_TVA_Bottom:
 			{
-				VerticalPositions = GetVerticalPositionsBottomAligned(InstanceData->UVRects, InstanceData->Unicode, Lines);
+				VerticalPositions = GetVerticalPositionsBottomAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
 				break;
 			}
 		}
 	}
 
-	InstanceData->CharacterPositions.Reset();
-
-	if (NumChars > 0)
+	TArray<FVector2f> CharacterPositions;
+	CharacterPositions.Reserve(NumCharsUnfiltered);
+	for (int32 i = 0; i < NumCharsUnfiltered; ++i)
 	{
-		for (int32 i = 0; i < NumChars; ++i)
-		{
-			InstanceData->CharacterPositions.Add(FVector2f(HorizontalPositions[i], VerticalPositions[i]));
-		}
+		CharacterPositions.Add(FVector2f(HorizontalPositions[i], VerticalPositions[i]));
 	}
 
-	return true;
+	return CharacterPositions;
 }
 
 void UNTPDataInterface::BuildHorizontalLineMetrics(
 	const TArray<FVector4>& UVRects,
 	const TArray<TArray<int32>>& Lines,
-	TArray<TArray<float>>& OutCumulativeWidthsPerCharacter) const
+	TArray<TArray<float>>& OutCumulativeWidthsPerCharacter)
 {
 	OutCumulativeWidthsPerCharacter.Reset();
 	OutCumulativeWidthsPerCharacter.SetNum(Lines.Num());
@@ -482,7 +553,7 @@ void UNTPDataInterface::BuildVerticalLineMetrics(
 	const TArray<FVector4>& UVRects,
 	const TArray<TArray<int32>>& Lines,
 	TArray<float>& OutCumulativeHeightsPerLine,
-	float& OutLineHeight) const
+	float& OutLineHeight)
 {
 	OutCumulativeHeightsPerLine.Reset();
 	OutCumulativeHeightsPerLine.Reserve(Lines.Num());
@@ -809,7 +880,8 @@ void UNTPDataInterface::SetShaderParameters(const FNiagaraDataInterfaceSetShader
 	FNDIFontUVInfoProxy& DataInterfaceProxy = Context.GetProxy<FNDIFontUVInfoProxy>();
 	FNDIFontUVInfoProxy::FRTInstanceData* RTData = DataInterfaceProxy.SystemInstancesToInstanceData_RT.Find(Context.GetSystemInstanceID());
 
-	DataInterfaceProxy.EnsureDefaultBuffer();
+	FRHICommandListImmediate& RHICmdList = FRHICommandListExecutor::GetImmediateCommandList();
+	DataInterfaceProxy.EnsureDefaultBuffer(RHICmdList);
 
 	FShaderParameters* ShaderParameters = Context.GetParameterNestedStruct<FShaderParameters>();
 	if (RTData && RTData->UVRectsBuffer.SRV.IsValid())
@@ -845,6 +917,7 @@ bool UNTPDataInterface::CopyToInternal(UNiagaraDataInterface* Destination) const
 		DestTyped->InputText = InputText;
 		DestTyped->HorizontalAlignment = HorizontalAlignment;
 		DestTyped->VerticalAlignment = VerticalAlignment;
+		DestTyped->SpawnWhitespaceCharacters = SpawnWhitespaceCharacters;
 		return true;
 	}
 	else
@@ -861,7 +934,8 @@ bool UNTPDataInterface::Equals(const UNiagaraDataInterface* Other) const
 		&& OtherTyped->FontAsset == FontAsset
 		&& OtherTyped->InputText == InputText
 		&& OtherTyped->HorizontalAlignment == HorizontalAlignment
-		&& OtherTyped->VerticalAlignment == VerticalAlignment;
+		&& OtherTyped->VerticalAlignment == VerticalAlignment
+		&& OtherTyped->SpawnWhitespaceCharacters == SpawnWhitespaceCharacters;
 	UE_LOG(LogNiagaraTextParticles, Verbose, TEXT("NTP DI: Equals - ThisAsset=%s OtherAsset=%s Result=%s"),
 		*GetNameSafe(FontAsset),
 		OtherTyped ? *GetNameSafe(OtherTyped->FontAsset) : TEXT("nullptr"),

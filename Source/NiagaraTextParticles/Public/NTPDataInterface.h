@@ -60,6 +60,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Vertical Alignment"))
 	ENTPTextVerticalAlignment VerticalAlignment = ENTPTextVerticalAlignment::NTP_TVA_Center;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Spawn Whitespace Characters"))
+	bool SpawnWhitespaceCharacters = false;
+
 	//UObject Interface
 	virtual void PostInitProperties() override;
 	//UObject Interface End
@@ -96,14 +99,15 @@ private:
 	static const FName GetTextLineCountName;
 	static const FName GetLineCharacterCountName;
 
-	void BuildHorizontalLineMetrics(const TArray<FVector4>& UVRects, const TArray<TArray<int32>>& Lines, TArray<TArray<float>>& OutCumulativeWidthsPerCharacter) const;
-	void BuildVerticalLineMetrics(const TArray<FVector4>& UVRects, const TArray<TArray<int32>>& Lines, TArray<float>& OutCumulativeHeightsPerLine, float& OutLineHeight) const;
-	TArray<float> GetHorizontalPositionsLeftAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	TArray<float> GetHorizontalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	TArray<float> GetHorizontalPositionsRightAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	TArray<float> GetVerticalPositionsTopAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	TArray<float> GetVerticalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	TArray<float> GetVerticalPositionsBottomAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
+	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector4>& UVRects, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment);
+	static void BuildHorizontalLineMetrics(const TArray<FVector4>& UVRects, const TArray<TArray<int32>>& Lines, TArray<TArray<float>>& OutCumulativeWidthsPerCharacter);
+	static void BuildVerticalLineMetrics(const TArray<FVector4>& UVRects, const TArray<TArray<int32>>& Lines, TArray<float>& OutCumulativeHeightsPerLine, float& OutLineHeight);
+	static TArray<float> GetHorizontalPositionsLeftAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
+	static TArray<float> GetHorizontalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
+	static TArray<float> GetHorizontalPositionsRightAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
+	static TArray<float> GetVerticalPositionsTopAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
+	static TArray<float> GetVerticalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
+	static TArray<float> GetVerticalPositionsBottomAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
 
 };
 
