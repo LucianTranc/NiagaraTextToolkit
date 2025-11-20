@@ -33,6 +33,8 @@ const FName UNTPDataInterface::GetTextWordCountName(TEXT("GetTextWordCount"));
 const FName UNTPDataInterface::GetWordCharacterCountName(TEXT("GetWordCharacterCount"));
 const FName UNTPDataInterface::GetWordTrailingWhitespaceCountName(TEXT("GetWordTrailingWhitespaceCount"));
 const FName UNTPDataInterface::GetFilterWhitespaceCharactersName(TEXT("GetFilterWhitespaceCharacters"));
+const FName UNTPDataInterface::GetCharacterCountInWordRangeName(TEXT("GetCharacterCountInWordRange"));
+const FName UNTPDataInterface::GetCharacterCountInLineRangeName(TEXT("GetCharacterCountInLineRange"));
 
 // The struct used to store our data interface data
 struct FNDIFontUVInfoInstanceData
@@ -1096,6 +1098,32 @@ void UNTPDataInterface::GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunct
 	SigFilterWhitespace.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
 	SigFilterWhitespace.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetBoolDef(), TEXT("FilterWhitespaceCharacters")));
 	OutFunctions.Add(SigFilterWhitespace);
+
+	// Register GetCharacterCountInWordRange
+	FNiagaraFunctionSignature SigCharCountInWordRange;
+	SigCharCountInWordRange.Name = GetCharacterCountInWordRangeName;
+#if WITH_EDITORONLY_DATA
+	SigCharCountInWordRange.Description = LOCTEXT("GetCharacterCountInWordRangeDesc", "Returns the total number of characters between StartWordIndex and EndWordIndex (inclusive). When whitespace filtering is disabled, trailing whitespace for each word in the range is also included.");
+#endif
+	SigCharCountInWordRange.bMemberFunction = true;
+	SigCharCountInWordRange.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
+	SigCharCountInWordRange.AddInput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("StartWordIndex")));
+	SigCharCountInWordRange.AddInput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("EndWordIndex")));
+	SigCharCountInWordRange.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("CharacterCountInRange")));
+	OutFunctions.Add(SigCharCountInWordRange);
+
+	// Register GetCharacterCountInLineRange
+	FNiagaraFunctionSignature SigCharCountInLineRange;
+	SigCharCountInLineRange.Name = GetCharacterCountInLineRangeName;
+#if WITH_EDITORONLY_DATA
+	SigCharCountInLineRange.Description = LOCTEXT("GetCharacterCountInLineRangeDesc", "Returns the total number of characters between StartLineIndex and EndLineIndex (inclusive).");
+#endif
+	SigCharCountInLineRange.bMemberFunction = true;
+	SigCharCountInLineRange.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
+	SigCharCountInLineRange.AddInput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("StartLineIndex")));
+	SigCharCountInLineRange.AddInput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("EndLineIndex")));
+	SigCharCountInLineRange.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("CharacterCountInLineRange")));
+	OutFunctions.Add(SigCharCountInLineRange);
 }
 
 void UNTPDataInterface::BuildShaderParameters(FNiagaraShaderParametersBuilder& ShaderParametersBuilder) const
@@ -1227,6 +1255,16 @@ void UNTPDataInterface::GetVMExternalFunction(const FVMExternalFunctionBindingIn
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetFilterWhitespaceCharactersVM(Context); });
 		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
+	else if (BindingInfo.Name == GetCharacterCountInWordRangeName)
+	{
+		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetCharacterCountInWordRangeVM(Context); });
+		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+	}
+	else if (BindingInfo.Name == GetCharacterCountInLineRangeName)
+	{
+		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetCharacterCountInLineRangeVM(Context); });
+		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+	}
 	else
 	{
 		UE_LOG(LogNiagaraTextParticles, Display, TEXT("Could not find data interface external function in %s. Received Name: %s"), *GetPathNameSafe(this), *BindingInfo.Name.ToString());
@@ -1348,27 +1386,32 @@ void UNTPDataInterface::GetTextLineCountVM(FVectorVMExternalFunctionContext& Con
 	}
 }
 
+static int32 GetLineCharacterCountInternal(const FNDIFontUVInfoInstanceData* Data, int32 LineIndex)
+{
+	const TArray<int32>& LineCharacterCounts = Data->LineCharacterCounts;
+	const int32 NumLines = Data->LineStartIndices.Num();
+
+	if (NumLines > 0 && LineIndex >= 0 && LineIndex < NumLines && LineCharacterCounts.IsValidIndex(LineIndex))
+	{
+		return LineCharacterCounts[LineIndex];
+	}
+
+	return 0;
+}
+
 void UNTPDataInterface::GetLineCharacterCountVM(FVectorVMExternalFunctionContext& Context)
 {
 	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
 	FNDIInputParam<int32> InLineIndex(Context);
 	FNDIOutputParam<int32> OutLineCharacterCount(Context);
 
-	const TArray<int32>& LineCharacterCounts = InstData.Get()->LineCharacterCounts;
-	const int32 NumLines = InstData.Get()->LineStartIndices.Num();
-
 	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
 	{
 		int32 LineIndex = InLineIndex.GetAndAdvance();
 
-		if (NumLines > 0 && LineIndex >= 0 && LineIndex < NumLines && LineCharacterCounts.IsValidIndex(LineIndex))
-		{
-			OutLineCharacterCount.SetAndAdvance(LineCharacterCounts[LineIndex]);
-		}
-		else
-		{
-			OutLineCharacterCount.SetAndAdvance(0);
-		}
+		const FNDIFontUVInfoInstanceData* Data = InstData.Get();
+		const int32 CharCount = GetLineCharacterCountInternal(Data, LineIndex);
+		OutLineCharacterCount.SetAndAdvance(CharCount);
 	}
 }
 
@@ -1385,27 +1428,56 @@ void UNTPDataInterface::GetTextWordCountVM(FVectorVMExternalFunctionContext& Con
 	}
 }
 
+static int32 GetWordCharacterCountInternal(const FNDIFontUVInfoInstanceData* Data, int32 WordIndex)
+{
+	const TArray<int32>& WordCharacterCounts = Data->WordCharacterCounts;
+	const int32 NumWords = Data->WordStartIndices.Num();
+
+	if (NumWords > 0 && WordIndex >= 0 && WordIndex < NumWords && WordCharacterCounts.IsValidIndex(WordIndex))
+	{
+		return WordCharacterCounts[WordIndex];
+	}
+
+	return 0;
+}
+
+static int32 GetWordTrailingWhitespaceCountInternal(const FNDIFontUVInfoInstanceData* Data, int32 WordIndex)
+{
+	const TArray<int32>& WordStartIndices = Data->WordStartIndices;
+	const TArray<int32>& WordCharacterCounts = Data->WordCharacterCounts;
+	const int32 NumWords = WordStartIndices.Num();
+	const int32 TotalChars = Data->Unicode.Num();
+
+	if (NumWords > 0 && WordIndex >= 0 && WordIndex < NumWords &&
+		WordCharacterCounts.IsValidIndex(WordIndex) && WordStartIndices.IsValidIndex(WordIndex))
+	{
+		const int32 EndOfWordIndex = WordStartIndices[WordIndex] + WordCharacterCounts[WordIndex];
+		int32 NextWordStartIndex = TotalChars;
+
+		if (WordIndex < NumWords - 1 && WordStartIndices.IsValidIndex(WordIndex + 1))
+		{
+			NextWordStartIndex = WordStartIndices[WordIndex + 1];
+		}
+
+		return FMath::Max(0, NextWordStartIndex - EndOfWordIndex);
+	}
+
+	return 0;
+}
+
 void UNTPDataInterface::GetWordCharacterCountVM(FVectorVMExternalFunctionContext& Context)
 {
 	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
 	FNDIInputParam<int32> InWordIndex(Context);
 	FNDIOutputParam<int32> OutWordCharacterCount(Context);
 
-	const TArray<int32>& WordCharacterCounts = InstData.Get()->WordCharacterCounts;
-	const int32 NumWords = InstData.Get()->WordStartIndices.Num();
-
 	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
 	{
 		int32 WordIndex = InWordIndex.GetAndAdvance();
 
-		if (NumWords > 0 && WordIndex >= 0 && WordIndex < NumWords && WordCharacterCounts.IsValidIndex(WordIndex))
-		{
-			OutWordCharacterCount.SetAndAdvance(WordCharacterCounts[WordIndex]);
-		}
-		else
-		{
-			OutWordCharacterCount.SetAndAdvance(0);
-		}
+		const FNDIFontUVInfoInstanceData* Data = InstData.Get();
+		const int32 CharCount = GetWordCharacterCountInternal(Data, WordIndex);
+		OutWordCharacterCount.SetAndAdvance(CharCount);
 	}
 }
 
@@ -1415,33 +1487,12 @@ void UNTPDataInterface::GetWordTrailingWhitespaceCountVM(FVectorVMExternalFuncti
 	FNDIInputParam<int32> InWordIndex(Context);
 	FNDIOutputParam<int32> OutTrailingWhitespaceCount(Context);
 
-	const TArray<int32>& WordStartIndices = InstData.Get()->WordStartIndices;
-	const TArray<int32>& WordCharacterCounts = InstData.Get()->WordCharacterCounts;
-	const int32 NumWords = WordStartIndices.Num();
-	const int32 TotalChars = InstData.Get()->Unicode.Num();
-
 	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
 	{
 		int32 WordIndex = InWordIndex.GetAndAdvance();
-
-		if (NumWords > 0 && WordIndex >= 0 && WordIndex < NumWords && WordCharacterCounts.IsValidIndex(WordIndex) && WordStartIndices.IsValidIndex(WordIndex))
-		{
-			int32 EndOfWordIndex = WordStartIndices[WordIndex] + WordCharacterCounts[WordIndex];
-			int32 NextWordStartIndex = TotalChars;
-
-			// If it's not the last word, get the start of the next word
-			if (WordIndex < NumWords - 1 && WordStartIndices.IsValidIndex(WordIndex + 1))
-			{
-				NextWordStartIndex = WordStartIndices[WordIndex + 1];
-			}
-
-			int32 TrailingSpace = FMath::Max(0, NextWordStartIndex - EndOfWordIndex);
-			OutTrailingWhitespaceCount.SetAndAdvance(TrailingSpace);
-		}
-		else
-		{
-			OutTrailingWhitespaceCount.SetAndAdvance(0);
-		}
+		const FNDIFontUVInfoInstanceData* Data = InstData.Get();
+		const int32 TrailingSpace = GetWordTrailingWhitespaceCountInternal(Data, WordIndex);
+		OutTrailingWhitespaceCount.SetAndAdvance(TrailingSpace);
 	}
 }
 
@@ -1455,6 +1506,89 @@ void UNTPDataInterface::GetFilterWhitespaceCharactersVM(FVectorVMExternalFunctio
 	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
 	{
 		OutFilter.SetAndAdvance(bValue);
+	}
+}
+
+void UNTPDataInterface::GetCharacterCountInWordRangeVM(FVectorVMExternalFunctionContext& Context)
+{
+	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
+	FNDIInputParam<int32> InStartWordIndex(Context);
+	FNDIInputParam<int32> InEndWordIndex(Context);
+	FNDIOutputParam<int32> OutCharacterCountInRange(Context);
+
+	const TArray<int32>& WordStartIndices = InstData.Get()->WordStartIndices;
+	const TArray<int32>& WordCharacterCounts = InstData.Get()->WordCharacterCounts;
+	const int32 NumWords = WordStartIndices.Num();
+	const int32 TotalChars = InstData.Get()->Unicode.Num();
+	const bool bFilterWhitespace = InstData.Get()->bFilterWhitespaceCharactersValue;
+
+	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
+	{
+		int32 StartWordIndex = InStartWordIndex.GetAndAdvance();
+		int32 EndWordIndex = InEndWordIndex.GetAndAdvance();
+
+		int32 TotalInRange = 0;
+
+		if (NumWords > 0 && StartWordIndex >= 0 && StartWordIndex < NumWords)
+		{
+			const int32 StartIndex = StartWordIndex;
+			const int32 EndIndex   = FMath::Clamp(EndWordIndex, 0, NumWords - 1);
+
+			if (StartIndex <= EndIndex)
+			{
+				for (int32 WordIndex = StartIndex; WordIndex <= EndIndex; ++WordIndex)
+				{
+					const FNDIFontUVInfoInstanceData* Data = InstData.Get();
+					const int32 CharCount = GetWordCharacterCountInternal(Data, WordIndex);
+					TotalInRange += CharCount;
+
+					if (!bFilterWhitespace)
+					{
+						const int32 TrailingSpace = GetWordTrailingWhitespaceCountInternal(Data, WordIndex);
+						TotalInRange += TrailingSpace;
+					}
+				}
+			}
+		}
+
+		OutCharacterCountInRange.SetAndAdvance(TotalInRange);
+	}
+}
+
+void UNTPDataInterface::GetCharacterCountInLineRangeVM(FVectorVMExternalFunctionContext& Context)
+{
+	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
+	FNDIInputParam<int32> InStartLineIndex(Context);
+	FNDIInputParam<int32> InEndLineIndex(Context);
+	FNDIOutputParam<int32> OutCharacterCountInLineRange(Context);
+
+	const int32 NumLines = InstData.Get()->LineStartIndices.Num();
+
+	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
+	{
+		int32 StartLineIndex = InStartLineIndex.GetAndAdvance();
+		int32 EndLineIndex = InEndLineIndex.GetAndAdvance();
+
+		int32 TotalInRange = 0;
+
+		if (NumLines > 0 && StartLineIndex >= 0 && StartLineIndex < NumLines)
+		{
+			const int32 StartIndex = StartLineIndex;
+			const int32 EndIndex   = FMath::Clamp(EndLineIndex, 0, NumLines - 1);
+
+			if (StartIndex <= EndIndex)
+			{
+				const FNDIFontUVInfoInstanceData* Data = InstData.Get();
+
+				for (int32 LineIndex = StartIndex; LineIndex <= EndIndex; ++LineIndex)
+				{
+					const int32 CharCount = GetLineCharacterCountInternal(Data, LineIndex);
+					TotalInRange += CharCount;
+				}
+			}
+		}
+
+		OutCharacterCountInLineRange.SetAndAdvance(TotalInRange);
 	}
 }
 
@@ -1481,7 +1615,9 @@ bool UNTPDataInterface::GetFunctionHLSL(const FNiagaraDataInterfaceGPUParamInfo&
 		|| FunctionInfo.DefinitionName == GetTextWordCountName
 		|| FunctionInfo.DefinitionName == GetWordCharacterCountName
 		|| FunctionInfo.DefinitionName == GetWordTrailingWhitespaceCountName
-		|| FunctionInfo.DefinitionName == GetFilterWhitespaceCharactersName;
+		|| FunctionInfo.DefinitionName == GetFilterWhitespaceCharactersName
+		|| FunctionInfo.DefinitionName == GetCharacterCountInWordRangeName
+		|| FunctionInfo.DefinitionName == GetCharacterCountInLineRangeName;
 }
 
 void UNTPDataInterface::GetParameterDefinitionHLSL(const FNiagaraDataInterfaceGPUParamInfo& ParamInfo, FString& OutHLSL)

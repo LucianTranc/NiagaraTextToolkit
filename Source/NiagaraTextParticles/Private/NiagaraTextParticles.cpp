@@ -3,6 +3,7 @@
 #include "NiagaraTextParticles.h"
 #include "Interfaces/IPluginManager.h"
 #include "Shader.h"
+#include "NiagaraSettings.h"
 #include "Misc/Paths.h"
 
 #define LOCTEXT_NAMESPACE "FNiagaraTextParticlesModule"
@@ -16,6 +17,19 @@ void FNiagaraTextParticlesModule::StartupModule()
 		const FString ShaderDir = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Shaders"));
 		AddShaderSourceDirectoryMapping(TEXT("/Plugin/NiagaraTextParticles"), ShaderDir);
 	}
+
+	// Register ESpawnTextParticleMode as a Niagara Additional Parameter Enum
+	if (UNiagaraSettings* NiagaraSettings = GetMutableDefault<UNiagaraSettings>())
+	{
+		const FSoftObjectPath EnumPath(TEXT("/NiagaraTextParticles/Enums/ESpawnTextParticleMode.ESpawnTextParticleMode"));
+
+		if (!NiagaraSettings->AdditionalParameterEnums.Contains(EnumPath))
+		{
+			NiagaraSettings->AdditionalParameterEnums.Add(EnumPath);
+			NiagaraSettings->SaveConfig();
+		}
+	}
+
 }
 
 void FNiagaraTextParticlesModule::ShutdownModule()

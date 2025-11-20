@@ -99,6 +99,8 @@ public:
 	void GetWordCharacterCountVM(FVectorVMExternalFunctionContext& Context);
 	void GetWordTrailingWhitespaceCountVM(FVectorVMExternalFunctionContext& Context);
 	void GetFilterWhitespaceCharactersVM(FVectorVMExternalFunctionContext& Context);
+	void GetCharacterCountInWordRangeVM(FVectorVMExternalFunctionContext& Context);
+	void GetCharacterCountInLineRangeVM(FVectorVMExternalFunctionContext& Context);
 
 private:
 	static const FName GetCharacterUVName;
@@ -110,6 +112,8 @@ private:
 	static const FName GetWordCharacterCountName;
 	static const FName GetWordTrailingWhitespaceCountName;
 	static const FName GetFilterWhitespaceCharactersName;
+	static const FName GetCharacterCountInWordRangeName;
+	static const FName GetCharacterCountInLineRangeName;
 
 	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector4>& UVRects, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment);
 	static TArray<FVector4> GetUVRectsFromFont(const UFont* FontAsset);

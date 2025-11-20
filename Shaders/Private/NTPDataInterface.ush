@@ -139,3 +139,61 @@ void GetFilterWhitespaceCharacters_{ParameterName}(out bool Out_FilterWhitespace
 {
 	Out_FilterWhitespaceCharacters = ({ParameterName}_bFilterWhitespaceCharactersValue != 0);
 }
+
+// Returns the total number of characters between StartWordIndex and EndWordIndex (inclusive).
+// When whitespace filtering is disabled, trailing whitespace after each word in the range is also included.
+void GetCharacterCountInWordRange_{ParameterName}(in int In_StartWordIndex, in int In_EndWordIndex, out int Out_CharacterCountInRange)
+{
+	int NumWords = int({ParameterName}_NumWords);
+	int TotalInRange = 0;
+
+	if (NumWords > 0 && In_StartWordIndex >= 0 && In_StartWordIndex < NumWords)
+	{
+		int StartIndex = In_StartWordIndex;
+		int EndIndex   = clamp(In_EndWordIndex, 0, NumWords - 1);
+
+		if (StartIndex <= EndIndex)
+		{
+			for (int WordIndex = StartIndex; WordIndex <= EndIndex; ++WordIndex)
+			{
+				int CharCount = 0;
+				GetWordCharacterCount_{ParameterName}(WordIndex, CharCount);
+				TotalInRange += CharCount;
+
+				if ({ParameterName}_bFilterWhitespaceCharactersValue == 0)
+				{
+					int TrailingSpace = 0;
+					GetWordTrailingWhitespaceCount_{ParameterName}(WordIndex, TrailingSpace);
+					TotalInRange += TrailingSpace;
+				}
+			}
+		}
+	}
+
+	Out_CharacterCountInRange = TotalInRange;
+}
+
+// Returns the total number of characters between StartLineIndex and EndLineIndex (inclusive).
+void GetCharacterCountInLineRange_{ParameterName}(in int In_StartLineIndex, in int In_EndLineIndex, out int Out_CharacterCountInLineRange)
+{
+	int NumLines = int({ParameterName}_NumLines);
+	int TotalInRange = 0;
+
+	if (NumLines > 0 && In_StartLineIndex >= 0 && In_StartLineIndex < NumLines)
+	{
+		int StartIndex = In_StartLineIndex;
+		int EndIndex   = clamp(In_EndLineIndex, 0, NumLines - 1);
+
+		if (StartIndex <= EndIndex)
+		{
+			for (int LineIndex = StartIndex; LineIndex <= EndIndex; ++LineIndex)
+			{
+				int LineCharCount = 0;
+				GetLineCharacterCount_{ParameterName}(LineIndex, LineCharCount);
+				TotalInRange += LineCharCount;
+			}
+		}
+	}
+
+	Out_CharacterCountInLineRange = TotalInRange;
+}
