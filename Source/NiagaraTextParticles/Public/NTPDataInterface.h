@@ -115,31 +115,13 @@ private:
 	static const FName GetCharacterCountInWordRangeName;
 	static const FName GetCharacterCountInLineRangeName;
 
-	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector4>& UVRects, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment);
-	static TArray<FVector4> GetUVRectsFromFont(const UFont* FontAsset);
-	static void BuildHorizontalLineMetrics(const TArray<FVector4>& UVRects, const TArray<TArray<int32>>& Lines, TArray<TArray<float>>& OutCumulativeWidthsPerCharacter);
-	static void BuildVerticalLineMetrics(const TArray<FVector4>& UVRects, const TArray<TArray<int32>>& Lines, TArray<float>& OutCumulativeHeightsPerLine, float& OutLineHeight);
-	static TArray<float> GetHorizontalPositionsLeftAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	static TArray<float> GetHorizontalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	static TArray<float> GetHorizontalPositionsRightAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	static TArray<float> GetVerticalPositionsTopAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	static TArray<float> GetVerticalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
-	static TArray<float> GetVerticalPositionsBottomAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines);
+	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector4>& UVRects, const TArray<int32>& VerticalOffsets, int32 Kerning, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment);
+	static bool GetFontInfo(const UFont* FontAsset, TArray<FVector4>& OutUVRects, TArray<int32>& OutVerticalOffsets, int32& OutKerning);
 
-	static void ProcessTextWithWhitespace(
+	static void ProcessText(
 		const FString& InputText,
 		const TArray<FVector2f>& CharacterPositionsUnfiltered,
-		TArray<int32>& OutUnicode,
-		TArray<FVector2f>& OutCharacterPositions,
-		TArray<int32>& OutLineStartIndices,
-		TArray<int32>& OutLineCharacterCounts,
-		TArray<int32>& OutWordStartIndices,
-		TArray<int32>& OutWordCharacterCounts
-	);
-
-	static void ProcessTextWithoutWhitespace(
-		const FString& InputText,
-		const TArray<FVector2f>& CharacterPositionsUnfiltered,
+		const bool bFilterWhitespace,
 		TArray<int32>& OutUnicode,
 		TArray<FVector2f>& OutCharacterPositions,
 		TArray<int32>& OutLineStartIndices,

@@ -19,10 +19,86 @@ static const TCHAR* FontUVTemplateShaderFile = TEXT("/Plugin/NiagaraTextParticle
 static bool IsWhitespaceChar(int32 Code)
 {
 	return Code == ' '
-		|| Code == '\t'
-		|| Code == '\n'
-		|| Code == '\r';
+		|| Code == '\t';
 }
+
+// Iterator that understands newlines and reports original source indices per character,
+struct FNTPTextIterator
+{
+	const FString& Source;
+	const int32 Length;
+	int32 CurrentIndex;
+
+	explicit FNTPTextIterator(const FString& InSource)
+		: Source(InSource)
+		, Length(InSource.Len())
+		, CurrentIndex(0)
+	{
+	}
+
+	// Returns true as long as we are not past the end of the string.
+	bool HasNextCharacter()
+	{
+		return CurrentIndex < Length;
+	}
+
+	// Returns the next character in the current logical line.
+	// Newline characters ('\n' and '\r' / "\r\n") are consumed but never returned.
+	bool NextCharacterInLine(int32& OutSourceIndex, TCHAR& OutChar)
+	{
+		if (CurrentIndex >= Length)
+		{
+			return false;
+		}
+
+		const TCHAR Ch = Source[CurrentIndex];
+
+		// Handle newlines as line separators, not drawable characters.
+		if (Ch == '\n')
+		{
+			++CurrentIndex;
+			return false;
+		}
+
+		if (Ch == '\r')
+		{
+			// Treat CRLF as a single newline.
+			if (CurrentIndex + 1 < Length && Source[CurrentIndex + 1] == '\n')
+			{
+				CurrentIndex += 2;
+			}
+			else
+			{
+				++CurrentIndex;
+			}
+			return false;
+		}
+
+		OutSourceIndex = CurrentIndex;
+		OutChar = Ch;
+		++CurrentIndex;
+		return true;
+	}
+
+	// Peek at the next character in the current logical line without advancing.
+	// Returns false at end-of-line or end-of-string.
+	bool PeekNextCharacterInLine(TCHAR& OutChar) const
+	{
+		if (CurrentIndex >= Length)
+		{
+			return false;
+		}
+
+		const TCHAR Ch = Source[CurrentIndex];
+		if (Ch == '\n' || Ch == '\r')
+		{
+			return false;
+		}
+
+		OutChar = Ch;
+		return true;
+	}
+};
 
 const FName UNTPDataInterface::GetCharacterUVName(TEXT("GetCharacterUV"));
 const FName UNTPDataInterface::GetCharacterPositionName(TEXT("GetCharacterPosition"));
@@ -340,11 +416,16 @@ bool UNTPDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 {
 	FNDIFontUVInfoInstanceData* InstanceData = new (PerInstanceData) FNDIFontUVInfoInstanceData;
 
-	InstanceData->UVRects = GetUVRectsFromFont(FontAsset);
-	InstanceData->bFilterWhitespaceCharactersValue = bFilterWhitespaceCharacters;
-
-	TArray<FVector2f> CharacterPositionsUnfiltered = GetCharacterPositions(InstanceData->UVRects, InputText, HorizontalAlignment, VerticalAlignment);
-
+	TArray<FVector4> UVRects;
+	TArray<int32> VerticalOffsets;
+	int32 Kerning = 0;
+	if (!GetFontInfo(FontAsset, UVRects, VerticalOffsets, Kerning))
+	{
+		UE_LOG(LogNiagaraTextParticles, Warning, TEXT("NTP DI: Failed to get font info from FontAsset '%s'"), *GetNameSafe(FontAsset));
+	}
+	
+	TArray<FVector2f> CharacterPositionsUnfiltered = GetCharacterPositions(UVRects, VerticalOffsets, Kerning, InputText, HorizontalAlignment, VerticalAlignment);
+	
 	TArray<int32> OutUnicode;
 	TArray<FVector2f> OutCharacterPositions;
 	TArray<int32> OutLineStartIndices;
@@ -352,15 +433,10 @@ bool UNTPDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 	TArray<int32> OutWordStartIndices;
 	TArray<int32> OutWordCharacterCounts;
 
-	if (bFilterWhitespaceCharacters)
-	{
-		ProcessTextWithoutWhitespace(InputText, CharacterPositionsUnfiltered, OutUnicode, OutCharacterPositions, OutLineStartIndices, OutLineCharacterCounts, OutWordStartIndices, OutWordCharacterCounts);
-	}
-	else
-	{
-		ProcessTextWithWhitespace(InputText, CharacterPositionsUnfiltered, OutUnicode, OutCharacterPositions, OutLineStartIndices, OutLineCharacterCounts, OutWordStartIndices, OutWordCharacterCounts);
-	}
+	ProcessText(InputText, CharacterPositionsUnfiltered, bFilterWhitespaceCharacters, OutUnicode, OutCharacterPositions, OutLineStartIndices, OutLineCharacterCounts, OutWordStartIndices, OutWordCharacterCounts);
 
+	InstanceData->UVRects = MoveTemp(UVRects);
+	InstanceData->bFilterWhitespaceCharactersValue = bFilterWhitespaceCharacters;
 	InstanceData->Unicode = MoveTemp(OutUnicode);
 	InstanceData->CharacterPositions = MoveTemp(OutCharacterPositions);
 	InstanceData->LineStartIndices = MoveTemp(OutLineStartIndices);
@@ -371,158 +447,238 @@ bool UNTPDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 	return true;
 }
 
-TArray<FVector4> UNTPDataInterface::GetUVRectsFromFont(const UFont* FontAsset)
+bool UNTPDataInterface::GetFontInfo(const UFont* FontAsset, TArray<FVector4>& OutUVRects, TArray<int32>& OutVerticalOffsets, int32& OutKerning)
 {
-	TArray<FVector4> UVs;
+	OutUVRects.Reset();
+	OutVerticalOffsets.Reset();
+	OutKerning = 0;
 
 	// Only offline cached fonts have the Characters array populated
 	if (FontAsset && FontAsset->FontCacheType == EFontCacheType::Offline)
 	{
 		// Copy data from FFontCharacter array to Vector4 array
-		UVs.Reserve(FontAsset->Characters.Num());
+		const int32 NumCharacters = FontAsset->Characters.Num();
+		OutUVRects.Reserve(NumCharacters);
+		OutVerticalOffsets.Reserve(NumCharacters);
 
 		for (const FFontCharacter& FontChar : FontAsset->Characters)
 		{
-			UVs.Add(FVector4(FontChar.USize, FontChar.VSize, (float)FontChar.StartU, (float)FontChar.StartV));
+			OutUVRects.Add(FVector4(FontChar.USize, FontChar.VSize, (float)FontChar.StartU, (float)FontChar.StartV));
+			OutVerticalOffsets.Add(FontChar.VerticalOffset);
 		}
+
+		OutKerning = FontAsset->Kerning;
+		return true;
 	}
 	else
 	{
 		UE_LOG(LogNiagaraTextParticles, Warning, TEXT("NTP DI: Font '%s' is invalid or not an offline cached font - Characters array will be empty"), *GetNameSafe(FontAsset));
+		return false;
 	}
-
-	return UVs;
 }
 
-TArray<FVector2f> UNTPDataInterface::GetCharacterPositions(const TArray<FVector4>& UVRects, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment)
+TArray<FVector2f> UNTPDataInterface::GetCharacterPositions(const TArray<FVector4>& UVRects, const TArray<int32>& VerticalOffsets, int32 Kerning, FString InputString, ENTPTextHorizontalAlignment XAlignment, ENTPTextVerticalAlignment YAlignment)
 {
-	// Build Unicode from InputText
-	TArray<int32> UnicodeUnfiltered;
-	UnicodeUnfiltered.Reset();
-	if (!InputString.IsEmpty())
+
+	TArray<FVector2f> CharacterPositionsUnfiltered;
+
+	const int32 TextLength = InputString.Len();
+	if (TextLength <= 0 || UVRects.Num() == 0)
 	{
-		UnicodeUnfiltered.Reserve(InputString.Len());
-		for (int32 i = 0; i < InputString.Len(); ++i)
+		return CharacterPositionsUnfiltered;
+	}
+
+	// Initialize to (0,0) so that indices for newline characters
+	// are still valid when later indexed by the text processing passes.
+	CharacterPositionsUnfiltered.Init(FVector2f(0.0f, 0.0f), TextLength);
+
+	// Global fallback line height in case a line has no drawable characters.
+	float GlobalMaxGlyphHeight = 0.0f;
+	for (const FVector4& Rect : UVRects)
+	{
+		GlobalMaxGlyphHeight = FMath::Max(GlobalMaxGlyphHeight, static_cast<float>(Rect.Y));
+	}
+
+	const float CharIncrement = static_cast<float>(Kerning); // No extra horizontal spacing in this data interface.
+
+	// Per-line widths, heights, and tops
+	// tops are aligned at 0, so the top of the first line is at 0, and the top of the second line is the height of the first line, etc.
+	TArray<float> LineWidths;
+	TArray<float> LineHeights;
+	TArray<float> LineTops;
+	float TotalHeight = 0.0f;
+
+	FNTPTextIterator It(InputString);
+
+	while (It.HasNextCharacter())
+	{
+		float LineX = 0.0f;
+		float MaxBottom = 0.0f;
+
+		int32 SourceIndex = INDEX_NONE;
+		TCHAR Ch = 0;
+
+		while (It.NextCharacterInLine(SourceIndex, Ch))
 		{
-			const int32 Code = (int32)InputString[i];
-			UnicodeUnfiltered.Add(Code);
-			// log the unicode
-			UE_LOG(LogNiagaraTextParticles, Warning, TEXT("NTP DI: InitPerInstanceData - UnicodeFull[%d] = %d"), i, Code);
+			const int32 Code = static_cast<int32>(Ch);
+
+			// Skip characters that do not have glyph data. (positions will be set to 0,0)
+			if (!UVRects.IsValidIndex(Code) || !VerticalOffsets.IsValidIndex(Code))
+			{
+				continue;
+			}
+
+			const FVector4& UVRect = UVRects[Code];
+
+			const float SizeX = static_cast<float>(UVRect.X);
+			const float SizeY = static_cast<float>(UVRect.Y);
+			const float TopY  = static_cast<float>(VerticalOffsets[Code]); // how far from the line's origin its top is
+
+			const float BottomY = TopY + SizeY; // how far from the line's origin its bottom is
+			MaxBottom = FMath::Max(MaxBottom, BottomY);
+
+			LineX += SizeX;
+
+			// If we have another non-whitespace character on this line, add kerning.
+			TCHAR NextCh = 0;
+			if (It.PeekNextCharacterInLine(NextCh) && !FChar::IsWhitespace(NextCh))
+			{
+				LineX += CharIncrement;
+			}
+		}
+
+		LineWidths.Add(LineX);
+
+		const float LineHeight = (MaxBottom > 0.0f) ? MaxBottom : GlobalMaxGlyphHeight;
+		LineHeights.Add(LineHeight);
+		LineTops.Add(TotalHeight);
+		TotalHeight += LineHeight;
+	}
+
+	// if there are no lines, return an array of all zeros (in the case where all characters are newlines)
+	const int32 NumLines = LineWidths.Num();
+	if (NumLines == 0)
+	{
+		return CharacterPositionsUnfiltered;
+	}
+
+	// Vertical alignment: decide where the block of text is placed relative to Y=0.
+	float VerticalOffset = 0.0f;
+	switch (YAlignment)
+	{
+		case ENTPTextVerticalAlignment::NTP_TVA_Top:
+		{
+			// Top of first line at Y=0.
+			VerticalOffset = 0.0f;
+			break;
+		}
+		case ENTPTextVerticalAlignment::NTP_TVA_Center:
+		{
+			// Center of the whole block at Y=0.
+			VerticalOffset = -(TotalHeight * 0.5f);
+			break;
+		}
+		case ENTPTextVerticalAlignment::NTP_TVA_Bottom:
+		{
+			// Bottom of the last line at Y=0.
+			VerticalOffset = -TotalHeight;
+			break;
+		}
+		default:
+		{
+			break;
 		}
 	}
 
-	const int32 NumCharsUnfiltered = UnicodeUnfiltered.Num();
+	// Horizontal alignment: compute per-line starting X.
+	TArray<float> LineStartX;
+	LineStartX.SetNum(NumLines);
 
-	// Build 2D array of unicode values split by lines
-	TArray<TArray<int32>> LinesUnfiltered;
-	if (NumCharsUnfiltered > 0)
+	for (int32 LineIdx = 0; LineIdx < NumLines; ++LineIdx)
 	{
-		TArray<int32> CurrentLine;
-		
-		for (int32 i = 0; i < NumCharsUnfiltered; ++i)
-		{
-			const int32 Code = UnicodeUnfiltered[i];
-			CurrentLine.Add(Code);
-			
-			// Check for newline characters
-			if (Code == '\r') // CR (old Mac or part of CRLF)
-			{
-				// Check if next character is '\n' (CRLF)
-				if (i + 1 < NumCharsUnfiltered && UnicodeUnfiltered[i + 1] == '\n')
-				{
-					// This is CRLF, add the '\n' to current line as well
-					CurrentLine.Add('\n');
-					i++; // Skip the '\n' in next iteration
-					LinesUnfiltered.Add(CurrentLine);
-					CurrentLine.Reset();
-				}
-				else
-				{
-					// This is standalone CR (old Mac format)
-					LinesUnfiltered.Add(CurrentLine);
-					CurrentLine.Reset();
-				}
-			}
-			else if (Code == '\n') // LF (Unix/Mac/Windows, standalone)
-			{
-				LinesUnfiltered.Add(CurrentLine);
-				CurrentLine.Reset();
-			}
-		}
-		
-		// Add the last line if it's not empty (or if text doesn't end with newline)
-		if (!CurrentLine.IsEmpty())
-		{
-			LinesUnfiltered.Add(CurrentLine);
-		}
-	}
+		const float Width = LineWidths[LineIdx];
+		float StartX = 0.0f;
 
-	const int32 NumLinesUnfiltered = LinesUnfiltered.Num();
-
-	// Horizontal positions based on full text layout
-	TArray<float> HorizontalPositions;
-	HorizontalPositions.Reserve(NumCharsUnfiltered);
-	if (NumLinesUnfiltered > 0)
-	{
 		switch (XAlignment)
 		{
 			case ENTPTextHorizontalAlignment::NTP_THA_Left:
 			{
-				HorizontalPositions = GetHorizontalPositionsLeftAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
+				StartX = 0.0f;
 				break;
 			}
 			case ENTPTextHorizontalAlignment::NTP_THA_Center:
 			{
-				HorizontalPositions = GetHorizontalPositionsCenterAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
+				StartX = -Width * 0.5f;
 				break;
 			}
 			case ENTPTextHorizontalAlignment::NTP_THA_Right:
 			{
-				HorizontalPositions = GetHorizontalPositionsRightAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
+				StartX = -Width;
+				break;
+			}
+			default:
+			{
 				break;
 			}
 		}
+
+		LineStartX[LineIdx] = StartX;
 	}
 
+	// Second pass: assign a position to each character index in the original string,
+	// walking the text again line-by-line using the iterator.
+	FNTPTextIterator It2(InputString);
 
-	// Vertical positions based on full text layout
-	TArray<float> VerticalPositions;
-	VerticalPositions.Reserve(NumCharsUnfiltered);
-	if (NumLinesUnfiltered > 0)
+	for (int32 LineIdx = 0; LineIdx < NumLines && It2.HasNextCharacter(); ++LineIdx)
 	{
-		switch (YAlignment)
+		float LineX = 0.0f;
+		const float LineTop = LineTops[LineIdx] + VerticalOffset;
+
+		int32 SourceIndex = INDEX_NONE;
+		TCHAR Ch = 0;
+
+		while (It2.NextCharacterInLine(SourceIndex, Ch))
 		{
-			case ENTPTextVerticalAlignment::NTP_TVA_Top:
+			const int32 Code = static_cast<int32>(Ch);
+
+			// Skip characters that do not have glyph data. (positions will be set to 0,0)
+			if (!UVRects.IsValidIndex(Code) || !VerticalOffsets.IsValidIndex(Code))
 			{
-				VerticalPositions = GetVerticalPositionsTopAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
-				break;
+				continue;
 			}
-			case ENTPTextVerticalAlignment::NTP_TVA_Center:
+
+			const FVector4& UVRect = UVRects[Code];
+
+			const float SizeX = static_cast<float>(UVRect.X);
+			const float SizeY = static_cast<float>(UVRect.Y);
+			const float TopY  = static_cast<float>(VerticalOffsets[Code]);
+
+			const float GlyphLeft = LineStartX[LineIdx] + LineX;
+			const float GlyphTop  = LineTop + TopY;
+
+			const float PosX = GlyphLeft + SizeX * 0.5f;
+			const float PosY = GlyphTop + SizeY * 0.5f;
+
+			CharacterPositionsUnfiltered[SourceIndex] = FVector2f(PosX, PosY);
+
+			LineX += SizeX;
+
+			// Apply kerning based on the next character in this logical line, if any.
+			TCHAR NextCh = 0;
+			if (It2.PeekNextCharacterInLine(NextCh) && !FChar::IsWhitespace(NextCh))
 			{
-				VerticalPositions = GetVerticalPositionsCenterAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
-				break;
-			}
-			case ENTPTextVerticalAlignment::NTP_TVA_Bottom:
-			{
-				VerticalPositions = GetVerticalPositionsBottomAligned(UVRects, UnicodeUnfiltered, LinesUnfiltered);
-				break;
+				LineX += CharIncrement;
 			}
 		}
 	}
 
-	TArray<FVector2f> CharacterPositions;
-	CharacterPositions.Reserve(NumCharsUnfiltered);
-	for (int32 i = 0; i < NumCharsUnfiltered; ++i)
-	{
-		CharacterPositions.Add(FVector2f(HorizontalPositions[i], VerticalPositions[i]));
-	}
-
-	return CharacterPositions;
+	return CharacterPositionsUnfiltered;
 }
 
-void UNTPDataInterface::ProcessTextWithWhitespace(
+void UNTPDataInterface::ProcessText(
 	const FString& InputText,
 	const TArray<FVector2f>& CharacterPositionsUnfiltered,
+	const bool bFilterWhitespace,
 	TArray<int32>& OutUnicode,
 	TArray<FVector2f>& OutCharacterPositions,
 	TArray<int32>& OutLineStartIndices,
@@ -530,157 +686,79 @@ void UNTPDataInterface::ProcessTextWithWhitespace(
 	TArray<int32>& OutWordStartIndices,
 	TArray<int32>& OutWordCharacterCounts)
 {
+	OutUnicode.Reset();
+	OutCharacterPositions.Reset();
+	OutLineStartIndices.Reset();
+	OutWordStartIndices.Reset();
+	OutWordCharacterCounts.Reset();
 
+	// First line always starts at index 0.
 	OutLineStartIndices.Add(0);
+
 	OutUnicode.Reserve(InputText.Len());
 	OutCharacterPositions.Reserve(InputText.Len());
+
+	FNTPTextIterator It(InputText);
 
 	bool bInsideWord = false;
 	int32 CurrentWordStartIndex = -1;
 	int32 CurrentWordCharCount = 0;
 
-	for (int32 i = 0; i < InputText.Len(); ++i)
+	while (It.HasNextCharacter())
 	{
-		const int32 Code = (int32)InputText[i];
-		const bool bIsWhitespace = IsWhitespaceChar(Code);
+		int32 SourceIndex = INDEX_NONE;
+		TCHAR Ch = 0;
 
-		if (!bIsWhitespace)
+		while (It.NextCharacterInLine(SourceIndex, Ch))
 		{
-			if (!bInsideWord)
+			const int32 Code = static_cast<int32>(Ch);
+			const bool bIsWhitespace = IsWhitespaceChar(Code);
+
+			// Handle word state transitions
+			if (bIsWhitespace)
 			{
-				bInsideWord = true;
-				CurrentWordStartIndex = i;
-				CurrentWordCharCount = 0;
+				if (bInsideWord)
+				{
+					bInsideWord = false;
+					OutWordStartIndices.Add(CurrentWordStartIndex);
+					OutWordCharacterCounts.Add(CurrentWordCharCount);
+				}
 			}
-			CurrentWordCharCount++;
-		}
-		else
-		{
-			if (bInsideWord)
+			else
 			{
-				bInsideWord = false;
-				OutWordStartIndices.Add(CurrentWordStartIndex);
-				OutWordCharacterCounts.Add(CurrentWordCharCount);
+				if (!bInsideWord)
+				{
+					bInsideWord = true;
+					CurrentWordStartIndex = OutUnicode.Num();
+					CurrentWordCharCount = 0;
+				}
+				CurrentWordCharCount++;
 			}
-		}
 
-		// Always add the character since we are spawning whitespace
-		OutUnicode.Add(Code);
-		OutCharacterPositions.Add(CharacterPositionsUnfiltered[i]);
-
-		// Handle Newlines
-		if (Code == '\n')
-		{
-			// Start new line on next index
-			OutLineStartIndices.Add(i);
-		}
-		else if (Code == '\r')
-		{
-			// Check for CRLF
-			if (i + 1 < InputText.Len() && InputText[i + 1] == '\n')
+			// Filter logic: if filtering is on and it's whitespace, skip output.
+			if (bFilterWhitespace && bIsWhitespace)
 			{
-				// Add the \n as well
-				OutUnicode.Add('\n');
-				OutCharacterPositions.Add(CharacterPositionsUnfiltered[i + 1]);
-				++i; // Consume the \n
+				continue;
 			}
-			// Start new line on next index
-			OutLineStartIndices.Add(i);
-		}
-	}
 
-	if (bInsideWord)
-	{
-		OutWordStartIndices.Add(CurrentWordStartIndex);
-		OutWordCharacterCounts.Add(CurrentWordCharCount);
-	}
-
-	OutLineCharacterCounts.Reset();
-	OutLineCharacterCounts.Reserve(OutLineStartIndices.Num());
-	for (int32 LineIdx = 0; LineIdx < OutLineStartIndices.Num(); ++LineIdx)
-	{
-		if (LineIdx < OutLineStartIndices.Num() - 1)
-		{
-			OutLineCharacterCounts.Add(OutLineStartIndices[LineIdx + 1] - OutLineStartIndices[LineIdx]);
-		}
-		else
-		{
-			OutLineCharacterCounts.Add(OutUnicode.Num() - OutLineStartIndices[LineIdx]);
-		}
-	}
-}
-
-void UNTPDataInterface::ProcessTextWithoutWhitespace(
-	const FString& InputText,
-	const TArray<FVector2f>& CharacterPositionsUnfiltered,
-	TArray<int32>& OutUnicode,
-	TArray<FVector2f>& OutCharacterPositions,
-	TArray<int32>& OutLineStartIndices,
-	TArray<int32>& OutLineCharacterCounts,
-	TArray<int32>& OutWordStartIndices,
-	TArray<int32>& OutWordCharacterCounts)
-{
-	OutLineStartIndices.Add(0);
-	OutUnicode.Reserve(InputText.Len());
-	OutCharacterPositions.Reserve(InputText.Len());
-
-	bool bInsideWord = false;
-	int32 CurrentWordStartIndex = -1;
-	int32 CurrentWordCharCount = 0;
-	
-	int32 FilteredIndex = 0;
-	for (int32 i = 0; i < InputText.Len(); ++i)
-	{
-		const int32 Code = (int32)InputText[i];
-		const bool bIsWhitespace = IsWhitespaceChar(Code);
-
-		if (!bIsWhitespace)
-		{
-			if (!bInsideWord)
-			{
-				bInsideWord = true;
-				CurrentWordStartIndex = FilteredIndex;
-				CurrentWordCharCount = 0;
-			}
-			CurrentWordCharCount++;
-		}
-		else
-		{
-			if (bInsideWord)
-			{
-				bInsideWord = false;
-				OutWordStartIndices.Add(CurrentWordStartIndex);
-				OutWordCharacterCounts.Add(CurrentWordCharCount);
-			}
-		}
-
-		if (Code == '\n')
-		{
-			// Newline is whitespace, so we don't add it to Unicode
-			// But we mark the start of a new line at the current FilteredIndex
-			OutLineStartIndices.Add(FilteredIndex);
-		}
-		else if (Code == '\r')
-		{
-			// Consume CRLF \n if present
-			if (i + 1 < InputText.Len() && InputText[i + 1] == '\n')
-			{
-				++i;
-			}
-			// Mark new line
-			OutLineStartIndices.Add(FilteredIndex);
-		}
-		else if (bIsWhitespace)
-		{
-			// Skip other whitespace (space, tab)
-			continue;
-		}
-		else
-		{
-			// Regular character
+			// Add to output
 			OutUnicode.Add(Code);
-			OutCharacterPositions.Add(CharacterPositionsUnfiltered[i]);
-			++FilteredIndex;
+			OutCharacterPositions.Add(CharacterPositionsUnfiltered[SourceIndex]);
+		}
+
+		// End of logical line. Check if there is another line following (meaning we consumed a newline).
+		if (It.HasNextCharacter())
+		{
+			// Newline breaks word in both modes.
+			if (bInsideWord)
+			{
+				bInsideWord = false;
+				OutWordStartIndices.Add(CurrentWordStartIndex);
+				OutWordCharacterCounts.Add(CurrentWordCharCount);
+			}
+
+			// Mark the start of the next line
+			OutLineStartIndices.Add(OutUnicode.Num());
 		}
 	}
 
@@ -690,6 +768,7 @@ void UNTPDataInterface::ProcessTextWithoutWhitespace(
 		OutWordCharacterCounts.Add(CurrentWordCharCount);
 	}
 
+	// Derive per-line character counts from the line start indices.
 	OutLineCharacterCounts.Reset();
 	OutLineCharacterCounts.Reserve(OutLineStartIndices.Num());
 	for (int32 LineIdx = 0; LineIdx < OutLineStartIndices.Num(); ++LineIdx)
@@ -703,238 +782,6 @@ void UNTPDataInterface::ProcessTextWithoutWhitespace(
 			OutLineCharacterCounts.Add(OutUnicode.Num() - OutLineStartIndices[LineIdx]);
 		}
 	}
-}
-
-void UNTPDataInterface::BuildHorizontalLineMetrics(
-	const TArray<FVector4>& UVRects,
-	const TArray<TArray<int32>>& Lines,
-	TArray<TArray<float>>& OutCumulativeWidthsPerCharacter)
-{
-	OutCumulativeWidthsPerCharacter.Reset();
-	OutCumulativeWidthsPerCharacter.SetNum(Lines.Num());
-
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		const TArray<int32>& Line = Lines[i];
-		OutCumulativeWidthsPerCharacter[i].Reserve(Line.Num());
-
-		float CumulativeWidth = 0.0f;
-		for (int32 j = 0; j < Line.Num(); ++j)
-		{
-			const int32 Code = Line[j];
-			float Width = 0.0f;
-			if (UVRects.IsValidIndex(Code))
-			{
-				Width = (float)UVRects[Code].X;
-			}
-			CumulativeWidth += Width;
-			OutCumulativeWidthsPerCharacter[i].Add(CumulativeWidth);
-		}
-	}
-}
-
-void UNTPDataInterface::BuildVerticalLineMetrics(
-	const TArray<FVector4>& UVRects,
-	const TArray<TArray<int32>>& Lines,
-	TArray<float>& OutCumulativeHeightsPerLine,
-	float& OutLineHeight)
-{
-	OutCumulativeHeightsPerLine.Reset();
-	OutCumulativeHeightsPerLine.Reserve(Lines.Num());
-
-	// Compute a single global line height from the font's UV rects
-	float GlobalMaxHeight = 0.0f;
-	for (int32 i = 0; i < UVRects.Num(); ++i)
-	{
-		const float Height = (float)UVRects[i].Y;
-		if (Height > GlobalMaxHeight)
-		{
-			GlobalMaxHeight = Height;
-		}
-	}
-
-	OutLineHeight = GlobalMaxHeight;
-
-	float CumulativeHeight = 0.0f;
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		CumulativeHeight += OutLineHeight;
-		OutCumulativeHeightsPerLine.Add(CumulativeHeight);
-	}
-}
-
-TArray<float> UNTPDataInterface::GetHorizontalPositionsLeftAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines)
-{
-	TArray<TArray<float>> CumulativeWidthsPerCharacter;
-	BuildHorizontalLineMetrics(UVRects, Lines, CumulativeWidthsPerCharacter);
-
-	TArray<float> HorizontalPositions;
-	HorizontalPositions.Reserve(Unicode.Num());
-
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		const TArray<int32>& Line = Lines[i];
-		
-		for (int32 j = 0; j < Line.Num(); ++j)
-		{
-			const int32 Code = Line[j];
-			float CharWidth = 0.0f;
-			if (UVRects.IsValidIndex(Code))
-			{
-				CharWidth = (float)UVRects[Code].X;
-			}
-			const float OffsetX = CumulativeWidthsPerCharacter[i][j] - (CharWidth * 0.5f);
-			HorizontalPositions.Add(OffsetX);
-		}
-	}
-
-	return HorizontalPositions;
-}
-
-TArray<float> UNTPDataInterface::GetHorizontalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines)
-{
-	TArray<TArray<float>> CumulativeWidthsPerCharacter;
-	BuildHorizontalLineMetrics(UVRects, Lines, CumulativeWidthsPerCharacter);
-
-	TArray<float> HorizontalPositions;
-	HorizontalPositions.Reserve(Unicode.Num());
-
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		const TArray<int32>& Line = Lines[i];
-
-		if (Line.Num() == 0)
-		{
-			continue;
-		}
-
-		const float HalfLineWidth = CumulativeWidthsPerCharacter[i][Line.Num() - 1] * 0.5f;
-
-		for (int32 j = 0; j < Line.Num(); ++j)
-		{
-			const int32 Code = Line[j];
-			float CharWidth = 0.0f;
-			if (UVRects.IsValidIndex(Code))
-			{
-				CharWidth = (float)UVRects[Code].X;
-			}
-			const float CenteredOffsetX = CumulativeWidthsPerCharacter[i][j] - HalfLineWidth - (CharWidth * 0.5f);
-			HorizontalPositions.Add(CenteredOffsetX);
-		}
-	}
-
-	return HorizontalPositions;
-}
-
-TArray<float> UNTPDataInterface::GetHorizontalPositionsRightAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines)
-{
-	TArray<TArray<float>> CumulativeWidthsPerCharacter;
-	BuildHorizontalLineMetrics(UVRects, Lines, CumulativeWidthsPerCharacter);
-
-	TArray<float> HorizontalPositions;
-	HorizontalPositions.Reserve(Unicode.Num());
-
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		const TArray<int32>& Line = Lines[i];
-
-		if (Line.Num() == 0)
-		{
-			continue;
-		}
-
-		const float LineTotalWidth = CumulativeWidthsPerCharacter[i][Line.Num() - 1];
-
-		for (int32 j = 0; j < Line.Num(); ++j)
-		{
-			const int32 Code = Line[j];
-			float CharWidth = 0.0f;
-			if (UVRects.IsValidIndex(Code))
-			{
-				CharWidth = (float)UVRects[Code].X;
-			}
-			const float OffsetX = CumulativeWidthsPerCharacter[i][j] - (CharWidth * 0.5f) - LineTotalWidth;
-			HorizontalPositions.Add(OffsetX);
-		}
-	}
-
-	return HorizontalPositions;
-}
-
-TArray<float> UNTPDataInterface::GetVerticalPositionsTopAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines)
-{
-	TArray<float> CumulativeHeightsPerLine;
-	float LineHeight = 0.0f;
-	BuildVerticalLineMetrics(UVRects, Lines, CumulativeHeightsPerLine, LineHeight);
-
-	TArray<float> VerticalPositions;
-	VerticalPositions.Reserve(Unicode.Num());
-
-	// First line's center is at 0, others go below it
-	const float FirstLineHalfHeight = LineHeight * 0.5f;
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		const TArray<int32>& Line = Lines[i];
-		const float CenteredOffsetY = CumulativeHeightsPerLine[i] - LineHeight * 0.5f - FirstLineHalfHeight;
-
-		for (int32 j = 0; j < Line.Num(); ++j)
-		{
-			VerticalPositions.Add(CenteredOffsetY);
-		}
-	}
-	
-	return VerticalPositions;
-}
-
-TArray<float> UNTPDataInterface::GetVerticalPositionsCenterAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines)
-{
-	TArray<float> CumulativeHeightsPerLine;
-	float LineHeight = 0.0f;
-	BuildVerticalLineMetrics(UVRects, Lines, CumulativeHeightsPerLine, LineHeight);
-
-	TArray<float> VerticalPositions;
-	VerticalPositions.Reserve(Unicode.Num());
-
-	const float HalfTotalHeight = CumulativeHeightsPerLine[Lines.Num() - 1] * 0.5f;
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		const TArray<int32>& Line = Lines[i];
-		const float CenteredOffsetY = CumulativeHeightsPerLine[i] - HalfTotalHeight - (LineHeight * 0.5f);
-
-		for (int32 j = 0; j < Line.Num(); ++j)
-		{
-			VerticalPositions.Add(CenteredOffsetY);
-		}
-	}
-
-	return VerticalPositions;
-}
-
-TArray<float> UNTPDataInterface::GetVerticalPositionsBottomAligned(const TArray<FVector4>& UVRects, const TArray<int32>& Unicode, const TArray<TArray<int32>>& Lines)
-{
-	TArray<float> CumulativeHeightsPerLine;
-	float LineHeight = 0.0f;
-	BuildVerticalLineMetrics(UVRects, Lines, CumulativeHeightsPerLine, LineHeight);
-
-	TArray<float> VerticalPositions;
-	VerticalPositions.Reserve(Unicode.Num());
-
-	// Last line's center is at 0, others go above it
-	const int32 LastLineIndex = Lines.Num() > 0 ? Lines.Num() - 1 : 0;
-	const float Anchor = (Lines.Num() > 0) ? (CumulativeHeightsPerLine[LastLineIndex] - LineHeight * 0.5f) : 0.0f;
-
-	for (int32 i = 0; i < Lines.Num(); ++i)
-	{
-		const TArray<int32>& Line = Lines[i];
-		const float CenteredOffsetY = CumulativeHeightsPerLine[i] - (LineHeight * 0.5f) - Anchor;
-
-		for (int32 j = 0; j < Line.Num(); ++j)
-		{
-			VerticalPositions.Add(CenteredOffsetY);
-		}
-	}
-
-	return VerticalPositions;
 }
 
 // Clean up RT instances
