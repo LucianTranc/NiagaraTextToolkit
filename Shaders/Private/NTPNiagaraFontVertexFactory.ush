@@ -47,36 +47,17 @@ struct FVertexFactoryInput
 #if COMPUTESHADER || RAYHITGROUPSHADER
 FVertexFactoryInput LoadVertexFactoryInputForHGS(uint TriangleIndex, int VertexIndex)
 {
-	// Different numbers of cutout vertices correspond to different index buffers
-	// For 8 verts, use GSixTriangleParticleIndexBuffer
-	if (NTPNiagaraFontVFLooseParameters.NumCutoutVerticesPerFrame == 8)
-	{		
-		FVertexFactoryInput Input;
-		
-		// Hard coded GSixTriangleParticleIndexBuffer
-		uint IndexBuffer[18] = { 0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 7 };
-		uint VertexId = IndexBuffer[(TriangleIndex * 3 + VertexIndex) % 18];
-		float2 TexCoords[4] = { float2(0.0f, 0.0f), float2(0.0f, 1.0f), float2(1.0f, 1.0f), float2(1.0f, 0.0f) };
-		Input.TexCoord = TexCoords[VertexId];
-		Input.VertexId = VertexId;
-		Input.InstanceId = TriangleIndex / 6;
+	// For 4 verts cutout geometry and normal particle geometry, use the typical 6 indices
+	FVertexFactoryInput Input;
 	
-		return Input;
-	}
-	else
-	{
-		// For 4 verts cutout geometry and normal particle geometry, use the typical 6 indices
-		FVertexFactoryInput Input;
-		
-		uint IndexBuffer[6] = { 0, 2, 3, 0, 1, 2 };
-		uint VertexId = IndexBuffer[(TriangleIndex * 3 + VertexIndex) % 6];
-		float2 TexCoords[4] = { float2(0.0f, 0.0f), float2(0.0f, 1.0f), float2(1.0f, 1.0f), float2(1.0f, 0.0f) };
-		Input.TexCoord = TexCoords[VertexId];
-		Input.VertexId = VertexId;
-		Input.InstanceId = TriangleIndex / 2;
-	
-		return Input;
-	}
+	uint IndexBuffer[6] = { 0, 2, 3, 0, 1, 2 };
+	uint VertexId = IndexBuffer[(TriangleIndex * 3 + VertexIndex) % 6];
+	float2 TexCoords[4] = { float2(0.0f, 0.0f), float2(0.0f, 1.0f), float2(1.0f, 1.0f), float2(1.0f, 0.0f) };
+	Input.TexCoord = TexCoords[VertexId];
+	Input.VertexId = VertexId;
+	Input.InstanceId = TriangleIndex / 2;
+
+	return Input;
 }
 
 FVertexFactoryInput LoadVertexFactoryInputForDynamicUpdate(uint TriangleIndex, int VertexIndex, uint PrimitiveId)
@@ -604,45 +585,16 @@ float3x3 CalcTangentBasis(FVertexFactoryIntermediates Intermediates)
 	return Result;
 }
 
-void ComputeBillboardUVs(FVertexFactoryInput Input, float2 ParticleSize, float SubImageIndex, out float2 UVForPosition, out float2 UVForTexturing, out float2 UVForTexturingUnflipped)
+void ComputeBillboardUVs(FVertexFactoryInput Input, float2 ParticleSize, out float2 UVForPosition, out float2 UVForTexturing, out float2 UVForTexturingUnflipped)
 {
 	// Encoding the UV flip in the sign of the size data.
 	float2 UVFlip = sign(ParticleSize);
 
-#if FEATURE_LEVEL >= FEATURE_LEVEL_SM4
-	BRANCH
-	if (NTPNiagaraFontVFLooseParameters.NumCutoutVerticesPerFrame > 0)
-	{
-		// Avoid uint divide which is extremely slow on GCN
-		const uint VertexIndexMask = NTPNiagaraFontVFLooseParameters.NumCutoutVerticesPerFrame == 8 ? 7 : 3; // BVC_FourVertices || BVC_EightVertices
-		uint CutoutVertexIndex = Input.VertexId & VertexIndexMask;
-		float NumFrames = NTPNiagaraFontVF.SubImageSize.x * NTPNiagaraFontVF.SubImageSize.y;
-		uint SubImageIndexInt = (uint)fmod(SubImageIndex, NumFrames);
+	UVForTexturing.x = UVFlip.x < 0.0 ? 1.0 - Input.TexCoord.x : Input.TexCoord.x;
+	UVForTexturing.y = UVFlip.y < 0.0 ? 1.0 - Input.TexCoord.y : Input.TexCoord.y;
 
-		FLATTEN
-		if (UVFlip.x * UVFlip.y < 0)
-		{
-			// Reverse the winding order of the polygon when only flipping in one direction to counteract UV flipping
-			CutoutVertexIndex = NTPNiagaraFontVFLooseParameters.NumCutoutVerticesPerFrame - 1 - CutoutVertexIndex;
-		}
-
-		// Fetch the billboard space positions from the appropriate frame of the preprocessed cutout geometry
-		UVForTexturing = UVForTexturingUnflipped = NTPNiagaraFontVFLooseParameters.CutoutGeometry[SubImageIndexInt * NTPNiagaraFontVFLooseParameters.NumCutoutVerticesPerFrame + CutoutVertexIndex];
-
-		// Invert positions on the billboard so that the cutout geometry still contains the visible portion
-		// This changes the winding order when only one direction is flipped
-		UVForPosition.x = UVFlip.x < 0.0 ? 1.0 - UVForTexturing.x : UVForTexturing.x;
-		UVForPosition.y = UVFlip.y < 0.0 ? 1.0 - UVForTexturing.y : UVForTexturing.y;
-	}
-	else
-#endif
-	{
-		UVForTexturing.x = UVFlip.x < 0.0 ? 1.0 - Input.TexCoord.x : Input.TexCoord.x;
-		UVForTexturing.y = UVFlip.y < 0.0 ? 1.0 - Input.TexCoord.y : Input.TexCoord.y;
-
-		// Note: not inverting positions, as that would change the winding order
-		UVForPosition = UVForTexturingUnflipped = Input.TexCoord.xy;
-	}
+	// Note: not inverting positions, as that would change the winding order
+	UVForPosition = UVForTexturingUnflipped = Input.TexCoord.xy;
 }
 
 FLWCVector3 SimToWorldPos(float3 SimSpacePos, FLWCMatrix LocalToWorld)
@@ -796,12 +748,6 @@ float4 GetNiagaraParticleDynamicParameters3(uint InstanceID)
 }
 #endif
 
-float GetNiagaraParticleSubimage(uint InstanceID)
-{
-	// See FNiagaraConstants for a synchronized value...
-	return SafeGetFloat(NTPNiagaraFontVF.SubimageDataOffset, InstanceID, NTPNiagaraFontVF.DefaultSubImage);
-}
-
 float3 GetNiagaraParticleFacingVector(uint InstanceID)
 {
 	// See FNiagaraConstants for a synchronized value...
@@ -838,7 +784,6 @@ FVertexFactoryIntermediates GetVertexFactoryIntermediates(FVertexFactoryInput In
 	const float ParticleRotation = GetNiagaraParticleRotation(ParticleID);
 	const float2 ParticleSize = GetNiagaraParticleSize(ParticleID);
 	const float3 ParticleVelocity = GetNiagaraParticleVelocity(ParticleID);
-	const float SubImageIndex = GetNiagaraParticleSubimage(ParticleID);
 	const float3 CustomFacing = SafeNormalize(GetNiagaraParticleFacingVector(ParticleID));
 	const float3 CustomAlignment = SafeNormalize(GetNiagaraParticleAlignmentVector(ParticleID));	
 	const float2 PivotOffset = GetNiagaraPivotOffset(ParticleID);
@@ -884,7 +829,7 @@ FVertexFactoryIntermediates GetVertexFactoryIntermediates(FVertexFactoryInput In
 	float2 UVForPosition;
 	float2 UVForTexturing;
 	float2 UVForTexturingUnflipped;
-	ComputeBillboardUVs(Input, ParticleSize, SubImageIndex, UVForPosition, UVForTexturing, UVForTexturingUnflipped);
+	ComputeBillboardUVs(Input, ParticleSize, UVForPosition, UVForTexturing, UVForTexturingUnflipped);
 
 	UVForTexturing.xy = float2(0.5f, 0.5f) + (UVForTexturing.xy - float2(0.5f, 0.5f) ) *  UVScale.xy; 
 
@@ -934,11 +879,10 @@ FVertexFactoryIntermediates GetVertexFactoryIntermediates(FVertexFactoryInput In
 		float3 PrevRight, PrevUp;
 		GetTangents(Input, PrevParticlePosition, PrevParticleRotation, PrevCustomFacing, PrevCustomAlignment, PrevParticleDirection, PrevRight, PrevUp);
 		
-		// NOTE: Don't use previous SubImageIndex here because cutout verts don't correlate between sub images
 		float2 PrevUVForPosition;
 		float2 PrevUVForTexturing;
 		float2 PrevUVForTexturingUnflipped;
-		ComputeBillboardUVs(Input, PrevParticleSize, SubImageIndex, PrevUVForPosition, PrevUVForTexturing, PrevUVForTexturingUnflipped);
+		ComputeBillboardUVs(Input, PrevParticleSize, PrevUVForPosition, PrevUVForTexturing, PrevUVForTexturingUnflipped);
 			
 		const float2x3 PrevTangents = float2x3(PrevRight, PrevUp);
 		const float3 PrevVertexOffset = PrevCameraOffset + mul(abs(PrevParticleSize) * (PrevUVForPosition - PivotOffset), PrevTangents);
@@ -961,22 +905,13 @@ FVertexFactoryIntermediates GetVertexFactoryIntermediates(FVertexFactoryInput In
 #endif // USE_PARTICLE_POSITION
 	
 	// SubUV.
-	float SubImageLerp = frac(SubImageIndex);
-
-	// add a bias to SubImageA to avoid numerical precision issues around SubImageSize.x vs SubImageSize.z
-	float SubImageA = SubImageIndex - SubImageLerp + 0.5f;
-	float SubImageB = SubImageA + 1;
-	float SubImageAH = floor( fmod( SubImageA, NTPNiagaraFontVF.SubImageSize.x ) );
-	float SubImageBH = floor( fmod( SubImageB, NTPNiagaraFontVF.SubImageSize.x ) );
-	float SubImageAV = floor( SubImageA * NTPNiagaraFontVF.SubImageSize.z );
-	float SubImageBV = floor( SubImageB * NTPNiagaraFontVF.SubImageSize.z );
-	Intermediates.TexCoord.xy = (float2( SubImageAH, SubImageAV ) + UVForTexturing) * NTPNiagaraFontVF.SubImageSize.zw;
-	Intermediates.TexCoord.zw = (float2(SubImageBH, SubImageBV) + UVForTexturing) * NTPNiagaraFontVF.SubImageSize.zw;
+	Intermediates.TexCoord.xy = UVForTexturing;
+	Intermediates.TexCoord.zw = UVForTexturing;
 #if NUM_MATERIAL_TEXCOORDS >= 3
-	Intermediates.TexCoord_Unflipped.xy = (float2(SubImageAH, SubImageAV) + UVForTexturingUnflipped) * NTPNiagaraFontVF.SubImageSize.zw;
-	Intermediates.TexCoord_Unflipped.zw = (float2(SubImageBH, SubImageBV) + UVForTexturingUnflipped) * NTPNiagaraFontVF.SubImageSize.zw;
+	Intermediates.TexCoord_Unflipped.xy = UVForTexturingUnflipped;
+	Intermediates.TexCoord_Unflipped.zw = UVForTexturingUnflipped;
 #endif
-	Intermediates.SubImageLerp = (NTPNiagaraFontVF.SubImageBlendMode == 1) ? SubImageLerp : 0.0f;
+	Intermediates.SubImageLerp = 0.0f;
 
 #if USE_PARTICLE_VELOCITY
 	{

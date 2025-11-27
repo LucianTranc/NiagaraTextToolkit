@@ -3,7 +3,9 @@
 #include "NTPNiagaraRendererFonts.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialRenderProxy.h"
+#include "Engine/Font.h"
 #include "NiagaraComponent.h"
 #include "NiagaraCutoutVertexBuffer.h"
 #include "NiagaraDataSet.h"
@@ -67,20 +69,14 @@ FNTPNiagaraRendererFonts::FNTPNiagaraRendererFonts(ERHIFeatureLevel::Type Featur
 	, SortMode(ENiagaraSortMode::ViewDistance)
 	, PivotInUVSpace(0.5f, 0.5f)
 	, MacroUVRadius(0.0f)
-	, SubImageSize(1.0f, 1.0f)
 	, NumIndicesPerInstance(0)
-	, bSubImageBlend(false)
 	, bRemoveHMDRollInVR(false)
 	, bSortHighPrecision(false)
 	, bSortOnlyWhenTranslucent(true)
 	, bGpuLowLatencyTranslucency(true)
-	, bEnableDistanceCulling(false)
 	, MinFacingCameraBlendDistance(0.0f)
 	, MaxFacingCameraBlendDistance(0.0f)
-	, DistanceCullRange(0.0f, FLT_MAX)
 	, MaterialParamValidMask(0)
-	, RendererVisTagOffset(INDEX_NONE)
-	, RendererVisibility(0)
 {
 	check(InProps && Emitter);
 
@@ -91,16 +87,13 @@ FNTPNiagaraRendererFonts::FNTPNiagaraRendererFonts(ERHIFeatureLevel::Type Featur
 	PivotInUVSpace = FVector2f(Properties->PivotInUVSpace);	// LWC_TODO: Precision loss
 	MacroUVRadius = Properties->MacroUVRadius;
 	SortMode = Properties->SortMode;
-	SubImageSize = FVector2f(Properties->SubImageSize);	// LWC_TODO: Precision loss
 	NumIndicesPerInstance = Properties->GetNumIndicesPerInstance();
-	bSubImageBlend = Properties->bSubImageBlend;
 	bRemoveHMDRollInVR = Properties->bRemoveHMDRollInVR;
 	bSortHighPrecision = UNiagaraRendererProperties::IsSortHighPrecision(Properties->SortPrecision);
 	bSortOnlyWhenTranslucent = Properties->bSortOnlyWhenTranslucent;
 	bGpuLowLatencyTranslucency = UNiagaraRendererProperties::IsGpuTranslucentThisFrame(FeatureLevel, Properties->GpuTranslucentLatency);
 	MinFacingCameraBlendDistance = Properties->MinFacingCameraBlendDistance;
 	MaxFacingCameraBlendDistance = Properties->MaxFacingCameraBlendDistance;
-	RendererVisibility = Properties->RendererVisibility;
 	bAccurateMotionVectors = Properties->NeedsPreciseMotionVectors();
 
 	PixelCoverageMode = Properties->PixelCoverageMode;
@@ -112,33 +105,6 @@ FNTPNiagaraRendererFonts::FNTPNiagaraRendererFonts(ERHIFeatureLevel::Type Featur
 		}
 	}
 	PixelCoverageBlend = FMath::Clamp(Properties->PixelCoverageBlend, 0.0f, 1.0f);
-
-	bEnableDistanceCulling = Properties->bEnableCameraDistanceCulling;
-	if (Properties->bEnableCameraDistanceCulling)
-	{
-		DistanceCullRange = FVector2f(Properties->MinCameraDistance, Properties->MaxCameraDistance);
-	}
-
-	// Get the offset of visibility tag in either particle data or parameter store
-	RendererVisTagOffset = INDEX_NONE;
-	bEnableCulling = bEnableDistanceCulling;
-	if (Properties->RendererVisibilityTagBinding.CanBindToHostParameterMap())
-	{
-		RendererVisTagOffset = Emitter->GetRendererBoundVariables().IndexOf(Properties->RendererVisibilityTagBinding.GetParamMapBindableVariable());
-		bVisTagInParamStore = true;
-	}
-	else
-	{
-		int32 FloatOffset, HalfOffset;
-		const FNiagaraDataSet& Data = Emitter->GetData();
-		Data.GetVariableComponentOffsets(Properties->RendererVisibilityTagBinding.GetDataSetBindableVariable(), FloatOffset, RendererVisTagOffset, HalfOffset);
-		bVisTagInParamStore = false;
-		bEnableCulling |= RendererVisTagOffset != INDEX_NONE;
-	}
-
-	NumCutoutVertexPerSubImage = Properties->GetNumCutoutVertexPerSubimage();
-	CutoutVertexBuffer.Data = Properties->GetCutoutData();
-
 	MaterialParamValidMask = Properties->MaterialParamValidMask;
 
 	RendererLayoutWithCustomSort = &Properties->RendererLayoutWithCustomSort;
@@ -191,7 +157,6 @@ void FNTPNiagaraRendererFonts::ReleaseRenderThreadResources()
 {
 	FNiagaraRenderer::ReleaseRenderThreadResources();
 
-	CutoutVertexBuffer.ReleaseResource();
 #if RHI_RAYTRACING
 	if (IsRayTracingAllowed())
 	{
@@ -205,7 +170,6 @@ void FNTPNiagaraRendererFonts::CreateRenderThreadResources()
 {
 	FNiagaraRenderer::CreateRenderThreadResources();
 	FRHICommandListBase& RHICmdList = FRHICommandListImmediate::Get();
-	CutoutVertexBuffer.InitResource(RHICmdList);
 
 #if RHI_RAYTRACING
 	if (IsRayTracingAllowed())
@@ -224,28 +188,10 @@ void FNTPNiagaraRendererFonts::CreateRenderThreadResources()
 #endif
 }
 
-bool FNTPNiagaraRendererFonts::AllowComputeShaders(EShaderPlatform ShaderPlatform)
-{
-    //return false;
-	static const auto* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("fx.NiagaraAllowComputeShaders"));
-	const bool bAllowed = CVar ? (CVar->GetInt() != 0) : true; // Default to true if not found, matches standard default
-	return bAllowed && GRHISupportsDrawIndirect;
-}
-
 bool FNTPNiagaraRendererFonts::AllowGPUSorting(EShaderPlatform ShaderPlatform)
 {
-    //return false;
 	static const auto* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("FX.AllowGPUSorting"));
-	// Default to 0 (false) if not found to be safe, though usually it exists.
 	return CVar && (CVar->GetInt() != 0);
-}
-
-bool FNTPNiagaraRendererFonts::AllowGPUCulling(EShaderPlatform ShaderPlatform)
-{
-    //return false;
-	static const auto* CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("Niagara.GPUCulling"));
-	const bool bAllowed = CVar ? (CVar->GetInt() != 0) : true;
-	return bAllowed && AllowGPUSorting(ShaderPlatform) && AllowComputeShaders(ShaderPlatform);
 }
 
 void FNTPNiagaraRendererFonts::PrepareParticleSpriteRenderData(FParticleSpriteRenderData& ParticleSpriteRenderData, const FSceneViewFamily& ViewFamily, FNiagaraDynamicDataBase* InDynamicData, const FNiagaraSceneProxy* SceneProxy, ENiagaraGpuComputeTickStage::Type GpuReadyTickStage) const
@@ -293,18 +239,6 @@ void FNTPNiagaraRendererFonts::PrepareParticleSpriteRenderData(FParticleSpriteRe
 		return;
 	}
 
-	// If the visibility tag comes from a parameter map, so we can evaluate it here and just early out if it doesn't match up
-	if (bVisTagInParamStore && ParticleSpriteRenderData.DynamicDataSprites->ParameterDataBound.IsValidIndex(RendererVisTagOffset))
-	{
-		int32 VisTag = 0;
-		FMemory::Memcpy(&VisTag, ParticleSpriteRenderData.DynamicDataSprites->ParameterDataBound.GetData() + RendererVisTagOffset, sizeof(int32));
-		if (RendererVisibility != VisTag)
-		{
-			ParticleSpriteRenderData.SourceParticleData = nullptr;
-			return;
-		}
-	}
-
 	// Particle source mode
 	if (SourceMode == ENiagaraRendererSourceDataMode::Particles)
 	{
@@ -322,25 +256,22 @@ void FNTPNiagaraRendererFonts::PrepareParticleSpriteRenderData(FParticleSpriteRe
 			ParticleSpriteRenderData.bNeedsSort = SortVariable.GetGPUOffset() != INDEX_NONE;
 		}
 
-		// Do we need culling?
-		ParticleSpriteRenderData.bNeedsCull = bEnableCulling;
-		ParticleSpriteRenderData.bSortCullOnGpu = (ParticleSpriteRenderData.bNeedsSort && AllowGPUSorting(ShaderPlatform)) || (ParticleSpriteRenderData.bNeedsCull && AllowGPUCulling(ShaderPlatform));
+		// No per-particle visibility or distance culling for this renderer.
+		ParticleSpriteRenderData.bSortCullOnGpu = ParticleSpriteRenderData.bNeedsSort && AllowGPUSorting(ShaderPlatform);
 
 		// Validate what we setup
 		if (SimTarget == ENiagaraSimTarget::GPUComputeSim)
 		{
-			if (!ensureMsgf(!ParticleSpriteRenderData.bNeedsCull || ParticleSpriteRenderData.bSortCullOnGpu, TEXT("Culling is requested on GPU but we don't support sorting, this will result in incorrect rendering.")))
+			if (!ensureMsgf(ParticleSpriteRenderData.bSortCullOnGpu, TEXT("Culling is requested on GPU but we don't support sorting, this will result in incorrect rendering.")))
 			{
-				ParticleSpriteRenderData.bNeedsCull = false;
 			}
 			ParticleSpriteRenderData.bNeedsSort &= ParticleSpriteRenderData.bSortCullOnGpu;
 
 			//-TODO: Culling and sorting from InitViewsAfterPrePass can not be respected if the culled entries have already been acquired
-			if ((ParticleSpriteRenderData.bNeedsSort || ParticleSpriteRenderData.bNeedsCull) && !SceneProxy->GetComputeDispatchInterface()->GetGPUInstanceCounterManager().CanAcquireCulledEntry())
+			if ((ParticleSpriteRenderData.bNeedsSort) && !SceneProxy->GetComputeDispatchInterface()->GetGPUInstanceCounterManager().CanAcquireCulledEntry())
 			{
 				//ensureMsgf(false, TEXT("Culling & sorting is not supported once the culled counts have been acquired, sorting & culling will be disabled for these draws."));
 				ParticleSpriteRenderData.bNeedsSort = false;
-				ParticleSpriteRenderData.bNeedsCull = false;
 			}
 		}
 		else
@@ -360,10 +291,7 @@ void FNTPNiagaraRendererFonts::PrepareParticleSpriteRenderData(FParticleSpriteRe
 				const int32 SortThreshold = GNiagaraGPUSortingCPUToGPUThreshold;
 				const bool bSortMoveToGpu = (SortThreshold >= 0) && (NumInstances >= SortThreshold);
 
-				const int32 CullThreshold = GNiagaraGPUCullingCPUToGPUThreshold;
-				const bool bCullMoveToGpu = (CullThreshold >= 0) && (NumInstances >= CullThreshold);
-
-				ParticleSpriteRenderData.bSortCullOnGpu = bSortMoveToGpu || bCullMoveToGpu;
+				ParticleSpriteRenderData.bSortCullOnGpu = bSortMoveToGpu;
 			}
 		}
 
@@ -381,21 +309,7 @@ void FNTPNiagaraRendererFonts::PrepareParticleRenderBuffers(FRHICommandListBase&
 			// For CPU simulations we do not gather int parameters inside TransferDataToGPU currently so we need to copy off
 			// integrate attributes if we are culling on the GPU.
 			TArray<uint32, TInlineAllocator<1>> IntParamsToCopy;
-			if (ParticleSpriteRenderData.bNeedsCull)
-			{
-				if (ParticleSpriteRenderData.bSortCullOnGpu)
-				{
-					if (RendererVisTagOffset != INDEX_NONE)
-					{
-						ParticleSpriteRenderData.RendererVisTagOffset = IntParamsToCopy.Add(RendererVisTagOffset);
-					}
-				}
-				else
-				{
-					ParticleSpriteRenderData.RendererVisTagOffset = RendererVisTagOffset;
-				}
-			}
-
+			
 			FParticleRenderData ParticleRenderData = TransferDataToGPU(RHICmdList, DynamicReadBuffer, ParticleSpriteRenderData.RendererLayout, IntParamsToCopy, ParticleSpriteRenderData.SourceParticleData);
 			const uint32 NumInstances = ParticleSpriteRenderData.SourceParticleData->GetNumInstances();
 
@@ -414,8 +328,6 @@ void FNTPNiagaraRendererFonts::PrepareParticleRenderBuffers(FRHICommandListBase&
 			ParticleSpriteRenderData.ParticleFloatDataStride = ParticleSpriteRenderData.SourceParticleData->GetFloatStride() / sizeof(float);
 			ParticleSpriteRenderData.ParticleHalfDataStride = ParticleSpriteRenderData.SourceParticleData->GetHalfStride() / sizeof(FFloat16);
 			ParticleSpriteRenderData.ParticleIntDataStride = ParticleSpriteRenderData.SourceParticleData->GetInt32Stride() / sizeof(int32);
-
-			ParticleSpriteRenderData.RendererVisTagOffset = RendererVisTagOffset;
 		}
 	}
 	else
@@ -436,16 +348,10 @@ void FNTPNiagaraRendererFonts::InitializeSortInfo(FParticleSpriteRenderData& Par
 	OutSortInfo.ParticleCount = ParticleSpriteRenderData.SourceParticleData->GetNumInstances();
 	OutSortInfo.SortMode = SortMode;
 	OutSortInfo.SetSortFlags(bSortHighPrecision, ParticleSpriteRenderData.SourceParticleData->GetGPUDataReadyStage());
-	OutSortInfo.bEnableCulling = ParticleSpriteRenderData.bNeedsCull;
-	OutSortInfo.RendererVisTagAttributeOffset = ParticleSpriteRenderData.RendererVisTagOffset;
-	OutSortInfo.RendererVisibility = RendererVisibility;
-	OutSortInfo.DistanceCullRange = DistanceCullRange;
+	OutSortInfo.bEnableCulling = false;
 	OutSortInfo.SystemLWCTile = UseLocalSpace(&SceneProxy) ? FVector3f::Zero() : SceneProxy.GetLWCRenderTile();
 
-	if ( bEnableDistanceCulling )
-	{
-		OutSortInfo.CullPositionAttributeOffset = ParticleSpriteRenderData.bSortCullOnGpu ? VFVariables[ENTPNiagaraSpriteVFLayout::Position].GetGPUOffset() : VFVariables[ENTPNiagaraSpriteVFLayout::Position].GetEncodedDatasetOffset();
-	}
+	OutSortInfo.CullPositionAttributeOffset = INDEX_NONE;
 
 	auto GetViewMatrices =
 		[](const FSceneView& View) -> const FViewMatrices&
@@ -527,21 +433,6 @@ void FNTPNiagaraRendererFonts::SetupVertexFactory(FRHICommandListBase& RHICmdLis
 		VertexFactory.SetAlignmentMode((uint32)ActualAlignmentMode);
 		VertexFactory.SetFacingMode((uint32)ActualFacingMode);
 	}
-
-	// Cutout geometry.
-	const bool bUseSubImage = SubImageSize.X != 1 || SubImageSize.Y != 1;
-	const bool bUseCutout = CutoutVertexBuffer.VertexBufferRHI.IsValid();
-	if (bUseCutout)
-	{
-		if (bUseSubImage)
-		{
-			VertexFactory.SetCutoutParameters(NumCutoutVertexPerSubImage, CutoutVertexBuffer.VertexBufferSRV);
-		}
-		else // Otherwise simply replace the input stream with the single cutout geometry
-		{
-			VertexFactory.SetVertexBufferOverride(&CutoutVertexBuffer);
-		}
-	}
 	
 	// The InitResource needs to happen at the end here as SetVertexBufferOverride will set the UV buffers.
 	VertexFactory.InitResource(RHICmdList);
@@ -564,7 +455,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 	PerViewUniformParameters.MacroUVParameters = CalcMacroUVParameters(View, SceneProxy.GetActorPosition(), MacroUVRadius);
 	PerViewUniformParameters.CameraFacingBlend = FVector4f(0.0f, 0.0f, 0.0f, 1.0f);
 	PerViewUniformParameters.RemoveHMDRoll = bRemoveHMDRollInVR ? 0.0f : 1.0f;
-	PerViewUniformParameters.SubImageSize = FVector4f(SubImageSize.X, SubImageSize.Y, 1.0f / SubImageSize.X, 1.0f / SubImageSize.Y);
 
 	if (bUseLocalSpace)
 	{
@@ -591,7 +481,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 	PerViewUniformParameters.DefaultCamOffset = 0.0f;
 	PerViewUniformParameters.DefaultPrevCamOffset = PerViewUniformParameters.DefaultCamOffset;
 	PerViewUniformParameters.DefaultNormAge = 0.0f;
-	PerViewUniformParameters.DefaultSubImage = 0.0f;
 	PerViewUniformParameters.DefaultFacing = FVector4f(1.0f, 0.0f, 0.0f, 0.0f);
 	PerViewUniformParameters.DefaultPrevFacing = PerViewUniformParameters.DefaultFacing;
 	PerViewUniformParameters.DefaultAlignment = FVector4f(1.0f, 0.0f, 0.0f, 0.0f);
@@ -667,7 +556,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 		PerViewUniformParameters.MaterialParam1DataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::MaterialParam1].GetGPUOffset();
 		PerViewUniformParameters.MaterialParam2DataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::MaterialParam2].GetGPUOffset();
 		PerViewUniformParameters.MaterialParam3DataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::MaterialParam3].GetGPUOffset();
-		PerViewUniformParameters.SubimageDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::SubImage].GetGPUOffset();
 		PerViewUniformParameters.FacingDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::Facing].GetGPUOffset();
 		PerViewUniformParameters.AlignmentDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::Alignment].GetGPUOffset();
 		PerViewUniformParameters.CameraOffsetDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::CameraOffset].GetGPUOffset();
@@ -700,7 +588,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 		PerViewUniformParameters.MaterialParam1DataOffset = INDEX_NONE;
 		PerViewUniformParameters.MaterialParam2DataOffset = INDEX_NONE;
 		PerViewUniformParameters.MaterialParam3DataOffset = INDEX_NONE;
-		PerViewUniformParameters.SubimageDataOffset = INDEX_NONE;
 		PerViewUniformParameters.FacingDataOffset = INDEX_NONE;
 		PerViewUniformParameters.AlignmentDataOffset = INDEX_NONE;
 		PerViewUniformParameters.CameraOffsetDataOffset = INDEX_NONE;
@@ -748,9 +635,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 					break;
 				case ENTPNiagaraSpriteVFLayout::Type::Alignment:
 					FMemory::Memcpy(&PerViewUniformParameters.DefaultAlignment, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(FVector3f));
-					break;
-				case ENTPNiagaraSpriteVFLayout::Type::SubImage:
-					FMemory::Memcpy(&PerViewUniformParameters.DefaultSubImage, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(float));
 					break;
 				case ENTPNiagaraSpriteVFLayout::Type::MaterialParam0:
 					FMemory::Memcpy(&PerViewUniformParameters.DefaultDynamicMaterialParameter0, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(FVector4f));
@@ -850,8 +734,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 		}
 	}
 
-	PerViewUniformParameters.SubImageBlendMode = bSubImageBlend;
-
 	if (VertexFactory.GetFacingMode() == uint32(ENTPNiagaraSpriteFacingMode::FaceCameraDistanceBlend))
 	{
 		float DistanceBlendMinSq = MinFacingCameraBlendDistance * MinFacingCameraBlendDistance;
@@ -881,9 +763,7 @@ void FNTPNiagaraRendererFonts::CreateMeshBatchForView(
 	const FSceneView& View,
 	const FNiagaraSceneProxy& SceneProxy,
 	FNTPNiagaraFontVertexFactory& VertexFactory,
-	uint32 NumInstances,
-	uint32 GPUCountBufferOffset,
-	bool bDoGPUCulling
+	uint32 NumInstances
 ) const
 {
 	FNTPNiagaraFontVFLooseParameters VFLooseParams;
@@ -894,47 +774,13 @@ void FNTPNiagaraRendererFonts::CreateMeshBatchForView(
 	FMaterialRenderProxy* MaterialRenderProxy = ParticleSpriteRenderData.DynamicDataSprites->Material;
 	check(MaterialRenderProxy);
 
-	VFLooseParams.NumCutoutVerticesPerFrame = VertexFactory.GetNumCutoutVerticesPerFrame();
-	VFLooseParams.CutoutGeometry = VertexFactory.GetCutoutGeometrySRV() ? VertexFactory.GetCutoutGeometrySRV() : GFNiagaraNullCutoutVertexBuffer.VertexBufferSRV.GetReference();
 	VFLooseParams.ParticleAlignmentMode = VertexFactory.GetAlignmentMode();
 	VFLooseParams.ParticleFacingMode = VertexFactory.GetFacingMode();
 	VFLooseParams.SortedIndices = VertexFactory.GetSortedIndicesSRV() ? VertexFactory.GetSortedIndicesSRV() : GFNiagaraNullSortedIndicesVertexBuffer.VertexBufferSRV.GetReference();
 	VFLooseParams.SortedIndicesOffset = VertexFactory.GetSortedIndicesOffset();
 
-	FNiagaraGPUInstanceCountManager::FIndirectArgSlot IndirectDraw;
-	if ((SourceMode == ENiagaraRendererSourceDataMode::Particles) && (GPUCountBufferOffset != INDEX_NONE))
-	{
-		FNiagaraGpuComputeDispatchInterface* ComputeDispatchInterface = SceneProxy.GetComputeDispatchInterface();
-		check(ComputeDispatchInterface);
-
-        // We can't have GPU Culling but that's okay since CPU Culling still works even if its a bit slower
-        // We should basically remove all the GPU culling related code eventually
-
-		// LINKER ERROR FIX: AddDrawIndirect is not exported by the Niagara module, so we cannot call it from a plugin.
-		// This effectively disables GPU-based indirect drawing (GPU culling) for this renderer.
-		/*
-		IndirectDraw = ComputeDispatchInterface->GetGPUInstanceCounterManager().AddDrawIndirect(
-			RHICmdList,
-			GPUCountBufferOffset,
-			NumIndicesPerInstance,
-			0,
-			View.IsInstancedStereoPass(),
-			bDoGPUCulling,
-			ParticleSpriteRenderData.SourceParticleData->GetGPUDataReadyStage()
-		);
-		*/
-	}
-
-	if (IndirectDraw.IsValid())
-	{
-		VFLooseParams.IndirectArgsBuffer = IndirectDraw.SRV;
-		VFLooseParams.IndirectArgsOffset = IndirectDraw.Offset / sizeof(uint32);
-	}
-	else
-	{
-		VFLooseParams.IndirectArgsBuffer = GFNiagaraNullSortedIndicesVertexBuffer.VertexBufferSRV;
-		VFLooseParams.IndirectArgsOffset = 0;
-	}
+	VFLooseParams.IndirectArgsBuffer = GFNiagaraNullSortedIndicesVertexBuffer.VertexBufferSRV;
+	VFLooseParams.IndirectArgsOffset = 0;
 
 	VertexFactory.LooseParameterUniformBuffer = FNTPNiagaraFontVFLooseParametersRef::CreateUniformBufferImmediate(VFLooseParams, UniformBuffer_SingleFrame);
 
@@ -969,17 +815,6 @@ void FNTPNiagaraRendererFonts::CreateMeshBatchForView(
 	MeshElement.MinVertexIndex = 0;
 	MeshElement.MaxVertexIndex = 0;
 	MeshElement.PrimitiveUniformBuffer = SceneProxy.GetCustomUniformBuffer(IsMotionBlurEnabled());
-	if (IndirectDraw.IsValid())
-	{
-		MeshElement.IndirectArgsBuffer = IndirectDraw.Buffer;
-		MeshElement.IndirectArgsOffset = IndirectDraw.Offset;
-		MeshElement.NumPrimitives = 0;
-	}
-
-	if (NumCutoutVertexPerSubImage == 8)
-	{
-		MeshElement.IndexBuffer = &GSixTriangleParticleIndexBuffer;
-	}
 
 	INC_DWORD_STAT_BY(STAT_NTP_NiagaraNumSprites, NumInstances);
 }
@@ -1019,32 +854,8 @@ void FNTPNiagaraRendererFonts::GetDynamicMeshElements(const TArray<const FSceneV
 				continue;
 			}
 
-			if (SourceMode == ENiagaraRendererSourceDataMode::Emitter && bEnableDistanceCulling)
-			{
-				const FVector ViewOrigin = View->ViewMatrices.GetViewOrigin();
-				FVector RefPosition = SceneProxy->GetLocalToWorld().GetOrigin();
-				const int32 BoundPosOffset = VFBoundOffsetsInParamStore[ENTPNiagaraSpriteVFLayout::Type::Position];
-				if (BoundPosOffset != INDEX_NONE && ParticleSpriteRenderData.DynamicDataSprites->ParameterDataBound.IsValidIndex(BoundPosOffset))
-				{
-					// retrieve the reference position from the parameter store
-					FVector3f RefPositionFloat(RefPosition);	// LWC_TODO: Precision loss
-					FMemory::Memcpy(&RefPositionFloat, ParticleSpriteRenderData.DynamicDataSprites->ParameterDataBound.GetData() + BoundPosOffset, sizeof(FVector3f));
-					if (UseLocalSpace(SceneProxy))
-					{
-						RefPosition = SceneProxy->GetLocalToWorld().TransformPosition(RefPosition);
-					}
-				}
-
-				const float DistSquared = SceneProxy->GetProxyDynamicData().LODDistanceOverride >= 0.0f ? FMath::Square(SceneProxy->GetProxyDynamicData().LODDistanceOverride) : float(FVector::DistSquared(RefPosition, ViewOrigin));
-				if (DistSquared < DistanceCullRange.X * DistanceCullRange.X || DistSquared > DistanceCullRange.Y * DistanceCullRange.Y)
-				{
-					// Distance cull the whole emitter
-					continue;
-				}
-			}
-
 			FNiagaraGPUSortInfo SortInfo;
-			if (ParticleSpriteRenderData.bNeedsSort || ParticleSpriteRenderData.bNeedsCull)
+			if (ParticleSpriteRenderData.bNeedsSort)
 			{
 				InitializeSortInfo(ParticleSpriteRenderData, *SceneProxy, *View, ViewIndex, SortInfo);
 			}
@@ -1055,16 +866,15 @@ void FNTPNiagaraRendererFonts::GetDynamicMeshElements(const TArray<const FSceneV
 			// TODO: Find a way to safely pool these such that they won't be concurrently accessed by multiple views
 			FNTPNiagaraFontVertexFactory& VertexFactory = CollectorResources->VertexFactory;
 
-			// Sort/Cull particles if needed.
+			// Sort particles if needed.
 			uint32 NumInstances = SourceMode == ENiagaraRendererSourceDataMode::Particles ? ParticleSpriteRenderData.SourceParticleData->GetNumInstances() : 1;
 
 			VertexFactory.SetSortedIndices(nullptr, 0xFFFFFFFF);
 			FNiagaraGpuComputeDispatchInterface* ComputeDispatchInterface = SceneProxy->GetComputeDispatchInterface();
-			if (ParticleSpriteRenderData.bNeedsCull || ParticleSpriteRenderData.bNeedsSort)
+			if (ParticleSpriteRenderData.bNeedsSort)
 			{
 				if (ParticleSpriteRenderData.bSortCullOnGpu)
 				{
-					SortInfo.CulledGPUParticleCountOffset = ParticleSpriteRenderData.bNeedsCull ? ComputeDispatchInterface->GetGPUInstanceCounterManager().AcquireCulledEntry() : INDEX_NONE;
 					if (ComputeDispatchInterface->AddSortedGPUSimulation(SortInfo))
 					{
 						VertexFactory.SetSortedIndices(SortInfo.AllocationInfo.BufferSRV, SortInfo.AllocationInfo.BufferOffset);
@@ -1074,7 +884,9 @@ void FNTPNiagaraRendererFonts::GetDynamicMeshElements(const TArray<const FSceneV
 				{
 					FGlobalDynamicReadBuffer::FAllocation SortedIndices;
 					SortedIndices = Collector.GetDynamicReadBuffer().AllocateUInt32(RHICmdList, NumInstances);
+					
 					NumInstances = SortAndCullIndices(SortInfo, *ParticleSpriteRenderData.SourceParticleData, SortedIndices);
+
 					VertexFactory.SetSortedIndices(SortedIndices.SRV, 0);
 				}
 			}
@@ -1085,9 +897,8 @@ void FNTPNiagaraRendererFonts::GetDynamicMeshElements(const TArray<const FSceneV
 				CollectorResources->UniformBuffer = CreateViewUniformBuffer(ParticleSpriteRenderData, *View, ViewFamily, *SceneProxy, VertexFactory);
 				VertexFactory.SetSpriteUniformBuffer(CollectorResources->UniformBuffer);
 
-				const uint32 GPUCountBufferOffset = SortInfo.CulledGPUParticleCountOffset != INDEX_NONE ? SortInfo.CulledGPUParticleCountOffset : ParticleSpriteRenderData.SourceParticleData->GetGPUInstanceCountBufferOffset();
 				FMeshBatch& MeshBatch = Collector.AllocateMesh();
-				CreateMeshBatchForView(RHICmdList, ParticleSpriteRenderData, MeshBatch, *View, *SceneProxy, VertexFactory, NumInstances, GPUCountBufferOffset, ParticleSpriteRenderData.bNeedsCull);
+				CreateMeshBatchForView(RHICmdList, ParticleSpriteRenderData, MeshBatch, *View, *SceneProxy, VertexFactory, NumInstances);
 				Collector.AddMesh(ViewIndex, MeshBatch);
 			}
 		}
@@ -1126,7 +937,7 @@ void FNTPNiagaraRendererFonts::GetDynamicRayTracingInstances(FRayTracingMaterial
 	PrepareParticleRenderBuffers(RHICmdList, ParticleSpriteRenderData, DynamicReadBuffer);
 	
 	FNiagaraGPUSortInfo SortInfo;
-	if (ParticleSpriteRenderData.bNeedsSort || ParticleSpriteRenderData.bNeedsCull)
+	if (ParticleSpriteRenderData.bNeedsSort)
 	{
 		InitializeSortInfo(ParticleSpriteRenderData, *SceneProxy, *Context.ReferenceView, 0, SortInfo);
 	}
@@ -1139,16 +950,15 @@ void FNTPNiagaraRendererFonts::GetDynamicRayTracingInstances(FRayTracingMaterial
 	FMeshCollectorResources* CollectorResources = &Context.RayTracingMeshResourceCollector.AllocateOneFrameResource<FMeshCollectorResources>();
 	FNTPNiagaraFontVertexFactory& VertexFactory = CollectorResources->VertexFactory;
 
-	// Sort/Cull particles if needed.
+	// Sort particles if needed.
 	uint32 NumInstances = SourceMode == ENiagaraRendererSourceDataMode::Particles ? ParticleSpriteRenderData.SourceParticleData->GetNumInstances() : 1;
 
 	VertexFactory.SetSortedIndices(nullptr, 0xFFFFFFFF);
 	FNiagaraGpuComputeDispatchInterface* ComputeDispatchInterface = SceneProxy->GetComputeDispatchInterface();
-	if (ParticleSpriteRenderData.bNeedsCull || ParticleSpriteRenderData.bNeedsSort)
+	if (ParticleSpriteRenderData.bNeedsSort)
 	{
 		if (ParticleSpriteRenderData.bSortCullOnGpu)
 		{
-			SortInfo.CulledGPUParticleCountOffset = ParticleSpriteRenderData.bNeedsCull ? ComputeDispatchInterface->GetGPUInstanceCounterManager().AcquireCulledEntry() : INDEX_NONE;
 			if (ComputeDispatchInterface->AddSortedGPUSimulation(SortInfo))
 			{
 				VertexFactory.SetSortedIndices(SortInfo.AllocationInfo.BufferSRV, SortInfo.AllocationInfo.BufferOffset);
@@ -1169,10 +979,8 @@ void FNTPNiagaraRendererFonts::GetDynamicRayTracingInstances(FRayTracingMaterial
 		CollectorResources->UniformBuffer = CreateViewUniformBuffer(ParticleSpriteRenderData, *Context.ReferenceView, Context.ReferenceViewFamily, *SceneProxy, VertexFactory);
 		VertexFactory.SetSpriteUniformBuffer(CollectorResources->UniformBuffer);
 
-		const uint32 GPUCountBufferOffset = SortInfo.CulledGPUParticleCountOffset != INDEX_NONE ? SortInfo.CulledGPUParticleCountOffset : ParticleSpriteRenderData.SourceParticleData->GetGPUInstanceCountBufferOffset();
-
 		FMeshBatch MeshBatch;
-		CreateMeshBatchForView(RHICmdList, ParticleSpriteRenderData, MeshBatch, *Context.ReferenceView, *SceneProxy, VertexFactory, NumInstances, GPUCountBufferOffset, ParticleSpriteRenderData.bNeedsCull);
+		CreateMeshBatchForView(RHICmdList, ParticleSpriteRenderData, MeshBatch, *Context.ReferenceView, *SceneProxy, VertexFactory, NumInstances);
 
 		FRayTracingInstance RayTracingInstance;
 		RayTracingInstance.Geometry = &RayTracingGeometry;
@@ -1182,11 +990,8 @@ void FNTPNiagaraRendererFonts::GetDynamicRayTracingInstances(FRayTracingMaterial
 		// Use the internal vertex buffer only when initialized otherwise used the shared vertex buffer - needs to be updated every frame
 		FRWBuffer* VertexBuffer = RayTracingDynamicVertexBuffer.NumBytes > 0 ? &RayTracingDynamicVertexBuffer : nullptr;
 
-		// Different numbers of cutout vertices correspond to different index buffers
-		// For 8 verts, use GSixTriangleParticleIndexBuffer
-		// For 4 verts cutout geometry and normal particle geometry, use the typical 6 indices
-		const int32 NumVerticesPerInstance = NumCutoutVertexPerSubImage == 8 ? 18 : 6;
-		const int32 NumTrianglesPerInstance = NumCutoutVertexPerSubImage == 8 ? 6 : 2;
+		const int32 NumVerticesPerInstance = 6;
+		const int32 NumTrianglesPerInstance = 2;
 
 		// Update dynamic ray tracing geometry
 		Context.DynamicRayTracingGeometriesToUpdate.Add(
@@ -1272,6 +1077,25 @@ FNiagaraDynamicDataBase *FNTPNiagaraRendererFonts::GenerateDynamicData(const FNi
 		if (DynamicData && Properties->MaterialParameters.HasAnyBindings())
 		{
 			ProcessMaterialParameterBindings(Properties->MaterialParameters, Emitter, MakeArrayView(BaseMaterials_GT));
+		}
+
+		if (DynamicData && Properties->FontBindings.Num() > 0)
+		{
+			for (UMaterialInterface* Mat : BaseMaterials_GT)
+			{
+				if (UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Mat))
+				{
+					for (const FNTPFontParameterBinding& Binding : Properties->FontBindings)
+					{
+						// We can only bind if we have a valid parameter name and a font with a texture
+						if (Binding.MaterialParameterName != NAME_None && Binding.Font && Binding.Font->Textures.Num() > 0)
+						{
+							// Bind page 0 of the font (the main atlas)
+							MID->SetTextureParameterValue(Binding.MaterialParameterName, Binding.Font->Textures[0]);
+						}
+					}
+				}
+			}
 		}
 	}
 

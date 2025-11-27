@@ -23,7 +23,6 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT( FNTPNiagaraFontUniformParameters, NIAGARAT
 	SHADER_PARAMETER_EX( FVector4f, TangentSelector, EShaderPrecisionModifier::Half )
 	SHADER_PARAMETER_EX( FVector4f, NormalsSphereCenter, EShaderPrecisionModifier::Half )
 	SHADER_PARAMETER_EX( FVector4f, NormalsCylinderUnitDirection, EShaderPrecisionModifier::Half )
-	SHADER_PARAMETER_EX( FVector4f, SubImageSize, EShaderPrecisionModifier::Half )
 	SHADER_PARAMETER_EX( FVector3f, CameraFacingBlend, EShaderPrecisionModifier::Half )
 	SHADER_PARAMETER_EX( float, RemoveHMDRoll, EShaderPrecisionModifier::Half )
 	SHADER_PARAMETER( FVector4f, MacroUVParameters )
@@ -41,7 +40,6 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT( FNTPNiagaraFontUniformParameters, NIAGARAT
 	SHADER_PARAMETER(int, PrevRotationDataOffset)
 	SHADER_PARAMETER(int, SizeDataOffset)
 	SHADER_PARAMETER(int, PrevSizeDataOffset)
-	SHADER_PARAMETER(int, SubimageDataOffset)
 	SHADER_PARAMETER(int, ColorDataOffset)
 	SHADER_PARAMETER(uint32, MaterialParamValidMask)
 	SHADER_PARAMETER(int, MaterialParamDataOffset)
@@ -52,7 +50,6 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT( FNTPNiagaraFontUniformParameters, NIAGARAT
 	SHADER_PARAMETER(int, PrevFacingDataOffset)
 	SHADER_PARAMETER(int, AlignmentDataOffset)
 	SHADER_PARAMETER(int, PrevAlignmentDataOffset)
-	SHADER_PARAMETER(int, SubImageBlendMode)
 	SHADER_PARAMETER(int, CameraOffsetDataOffset)
 	SHADER_PARAMETER(int, PrevCameraOffsetDataOffset)
 	SHADER_PARAMETER(int, UVScaleDataOffset)
@@ -77,7 +74,6 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT( FNTPNiagaraFontUniformParameters, NIAGARAT
 	SHADER_PARAMETER(float, DefaultCamOffset)
 	SHADER_PARAMETER(float, DefaultPrevCamOffset)
 	SHADER_PARAMETER(float, DefaultNormAge)
-	SHADER_PARAMETER(float, DefaultSubImage)
 	SHADER_PARAMETER(FVector4f, DefaultFacing)
 	SHADER_PARAMETER(FVector4f, DefaultPrevFacing)
 	SHADER_PARAMETER(FVector4f, DefaultAlignment)
@@ -94,13 +90,11 @@ BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT( FNTPNiagaraFontUniformParameters, NIAGARAT
 typedef TUniformBufferRef<FNTPNiagaraFontUniformParameters> FNTPNiagaraFontUniformBufferRef;
 
 BEGIN_GLOBAL_SHADER_PARAMETER_STRUCT(FNTPNiagaraFontVFLooseParameters, NIAGARATEXTPARTICLESVERTEXFACTORIES_API)
-	SHADER_PARAMETER(uint32, NumCutoutVerticesPerFrame)
 	SHADER_PARAMETER(uint32, NiagaraFloatDataStride)
 	SHADER_PARAMETER(uint32, ParticleAlignmentMode)
 	SHADER_PARAMETER(uint32, ParticleFacingMode)
 	SHADER_PARAMETER(uint32, SortedIndicesOffset)
 	SHADER_PARAMETER(uint32, IndirectArgsOffset)
-	SHADER_PARAMETER_SRV(Buffer<float2>, CutoutGeometry)
 	SHADER_PARAMETER_SRV(Buffer<float>, NiagaraParticleDataFloat)
 	SHADER_PARAMETER_SRV(Buffer<float>, NiagaraParticleDataHalf)
 	SHADER_PARAMETER_SRV(Buffer<uint>, SortedIndices)
@@ -189,8 +183,6 @@ public:
 	FNTPNiagaraFontVertexFactory(ENiagaraVertexFactoryType InType, ERHIFeatureLevel::Type InFeatureLevel)
 		: FNTPNiagaraVertexFactoryBase(InType, InFeatureLevel)
 		, LooseParameterUniformBuffer(nullptr)
-		, NumCutoutVerticesPerFrame(0)
-		, CutoutGeometrySRV(nullptr)
 		, AlignmentMode(0)
 		, FacingMode(0)
 		, SortedIndicesSRV(nullptr)
@@ -200,8 +192,6 @@ public:
 	FNTPNiagaraFontVertexFactory()
 		: FNTPNiagaraVertexFactoryBase(NVFT_MAX, ERHIFeatureLevel::Num)
 		, LooseParameterUniformBuffer(nullptr)
-		, NumCutoutVerticesPerFrame(0)
-		, CutoutGeometrySRV(nullptr)
 		, AlignmentMode(0)
 		, FacingMode(0)
 		, SortedIndicesSRV(nullptr)
@@ -245,15 +235,6 @@ public:
 	{
 		return SpriteUniformBuffer;
 	}
-
-	void SetCutoutParameters(int32 InNumCutoutVerticesPerFrame, FRHIShaderResourceView* InCutoutGeometrySRV)
-	{
-		NumCutoutVerticesPerFrame = InNumCutoutVerticesPerFrame;
-		CutoutGeometrySRV = InCutoutGeometrySRV;
-	}
-
-	inline int32 GetNumCutoutVerticesPerFrame() const { return NumCutoutVerticesPerFrame; }
-	inline FRHIShaderResourceView* GetCutoutGeometrySRV() const { return CutoutGeometrySRV; }
 
 	void SetSortedIndices(const FShaderResourceViewRHIRef& InSortedIndicesSRV, uint32 InSortedIndicesOffset)
 	{
@@ -308,8 +289,6 @@ private:
 	/** Uniform buffer with sprite parameters. */
 	FUniformBufferRHIRef SpriteUniformBuffer;
 
-	int32 NumCutoutVerticesPerFrame;
-	FShaderResourceViewRHIRef CutoutGeometrySRV;
 	uint32 AlignmentMode;
 	uint32 FacingMode;
 

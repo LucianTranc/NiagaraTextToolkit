@@ -11,6 +11,21 @@
 
 class UMaterialInstanceConstant;
 class FVertexFactoryType;
+class UFont;
+
+USTRUCT(BlueprintType)
+struct FNTPFontParameterBinding
+{
+	GENERATED_BODY()
+
+	/** The name of the Texture Parameter in the material to set. */
+	UPROPERTY(EditAnywhere, Category = "Font Binding")
+	FName MaterialParameterName = FName("NTP_Font");
+
+	/** The font asset to bind to the parameter. */
+	UPROPERTY(EditAnywhere, Category = "Font Binding")
+	TObjectPtr<UFont> Font;
+};
 
 /** This enum decides how a sprite particle will orient its "up" axis. Must keep these in sync with NiagaraSpriteVertexFactory.ush*/
 UENUM()
@@ -75,7 +90,6 @@ namespace ENTPNiagaraSpriteVFLayout
 		Size,
 		Facing,
 		Alignment,
-		SubImage,
 		MaterialParam0,
 		MaterialParam1,
 		MaterialParam2,
@@ -151,8 +165,8 @@ public:
 	virtual void CacheFromCompiledData(const FNiagaraDataSetCompiledData* CompiledData) override;
 	//UNiagaraMaterialRendererProperties interface END
 
-	int32 GetNumCutoutVertexPerSubimage() const;
-	uint32 GetNumIndicesPerInstance() const;
+	int32 GetNumCutoutVertexPerSubimage() const { return 4; }
+	uint32 GetNumIndicesPerInstance() const { return 6; }
 
 	/** The material used to render the particle. Note that it must have the Use with Niagara Sprites flag checked.*/
 	UPROPERTY(EditAnywhere, Category = "Sprite Rendering")
@@ -194,14 +208,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Sprite Rendering", meta = (DisplayName = "Default Pivot in UV Space"))
 	FVector2D PivotInUVSpace = FVector2D(0.5f, 0.5f);
 
-	/** When using SubImage lookups for particles, this variable contains the number of columns in X and the number of rows in Y.*/
-	UPROPERTY(EditAnywhere, Category = "SubUV", meta = (DisplayAfter = bSubImageBlend))
-	FVector2D SubImageSize = FVector2D(1.0f, 1.0f);
-
-	/** If true, blends the sub-image UV lookup with its next adjacent member using the fractional part of the SubImageIndex float value as the linear interpolation factor.*/
-	UPROPERTY(EditAnywhere, Category = "SubUV", meta = (DisplayName = "Sub UV Blending Enabled"))
-	uint8 bSubImageBlend : 1;
-
 	/** If true, removes the HMD view roll (e.g. in VR) */
 	UPROPERTY(EditAnywhere, Category = "Sprite Rendering", meta = (DisplayName = "Remove HMD Roll"))
 	uint8 bRemoveHMDRollInVR : 1;
@@ -209,10 +215,6 @@ public:
 	/** If true, the particles are only sorted when using a translucent material. */
 	UPROPERTY(EditAnywhere, Category = "Sorting", meta = (EditCondition = "SortMode != ENiagaraSortMode::None", EditConditionHides))
 	uint8 bSortOnlyWhenTranslucent : 1;
-
-	/** Enables frustum culling of individual sprites */
-	UPROPERTY(EditAnywhere, Category = "Visibility")
-	uint8 bEnableCameraDistanceCulling : 1;
 
 	/** Sort precision to use when sorting is active. */
 	UPROPERTY(EditAnywhere, Category = "Sorting", meta = (EditCondition = "SortMode != ENiagaraSortMode::None", EditConditionHides))
@@ -252,16 +254,6 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Sprite Rendering", meta = (UIMin = "0"))
 	float MaxFacingCameraBlendDistance = 0.0f;
 
-	UPROPERTY(EditAnywhere, Category = "Visibility", meta = (EditCondition = "bEnableCameraDistanceCulling", UIMin = 0.0f, EditConditionHides))
-	float MinCameraDistance;
-
-	UPROPERTY(EditAnywhere, Category = "Visibility", meta = (EditCondition = "bEnableCameraDistanceCulling", UIMin = 0.0f, EditConditionHides))
-	float MaxCameraDistance = 1000.0f;
-
-	/** If a render visibility tag is present, particles whose tag matches this value will be visible in this renderer. */
-	UPROPERTY(EditAnywhere, Category = "Visibility")
-	uint32 RendererVisibility = 0;
-
 	/** Which attribute should we use for position when generating sprites?*/
 	UPROPERTY(EditAnywhere, Category = "Bindings")
 	FNiagaraVariableAttributeBinding PositionBinding;
@@ -289,10 +281,6 @@ public:
 	/** Which attribute should we use for sprite alignment when generating sprites?*/
 	UPROPERTY(EditAnywhere, Category = "Bindings")
 	FNiagaraVariableAttributeBinding SpriteAlignmentBinding;
-
-	/** Which attribute should we use for sprite sub-image indexing when generating sprites?*/
-	UPROPERTY(EditAnywhere, Category = "Bindings")
-	FNiagaraVariableAttributeBinding SubImageIndexBinding;
 
 	/** Which attribute should we use for dynamic material parameters when generating sprites?*/
 	UPROPERTY(EditAnywhere, Category = "Bindings")
@@ -338,13 +326,13 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Bindings")
 	FNiagaraVariableAttributeBinding NormalizedAgeBinding;
 
-	/** Which attribute should we use for RendererVisibilityTag? */
-	UPROPERTY(EditAnywhere, Category = "Bindings")
-	FNiagaraVariableAttributeBinding RendererVisibilityTagBinding;
-
 	/** If this array has entries, we will create a MaterialInstanceDynamic per Emitter instance from Material and set the Material parameters using the Niagara simulation variables listed.*/
 	UPROPERTY(EditAnywhere, Category = "Bindings")
 	FNiagaraRendererMaterialParameters MaterialParameters;
+
+	/** Bind a specific Font Asset's texture to a named Material Parameter. */
+	UPROPERTY(EditAnywhere, Category = "Bindings")
+	TArray<FNTPFontParameterBinding> FontBindings;
 
 #if WITH_EDITORONLY_DATA
 	UPROPERTY()
@@ -370,44 +358,10 @@ public:
 	UPROPERTY(Transient)
 	FNiagaraVariableAttributeBinding PrevPivotOffsetBinding;
 
-	virtual bool NeedsMIDsForMaterials() const { return MaterialParameters.HasAnyBindings(); }
-
-
-#if WITH_EDITORONLY_DATA
-	/** Use the cutout texture from the material opacity mask, or if none exist, from the material opacity.	*/
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cutout")
-	bool bUseMaterialCutoutTexture;
-
-	/** Texture to generate bounding geometry from.	*/
-	UPROPERTY(EditAnywhere, Category="Cutout", meta = (EditCondition = "!bUseMaterialCutoutTexture", EditConditionHides))
-	TObjectPtr<UTexture2D> CutoutTexture;
-
-	/**
-	* More bounding vertices results in reduced overdraw, but adds more triangle overhead.
-	* The eight vertex mode is best used when the SubUV texture has a lot of space to cut out that is not captured by the four vertex version,
-	* and when the particles using the texture will be few and large.
-	*/
-	UPROPERTY(EditAnywhere, Category= "Cutout")
-	TEnumAsByte<enum ESubUVBoundingVertexCount> BoundingMode;
-
-	UPROPERTY(EditAnywhere, Category="Cutout")
-	TEnumAsByte<enum EOpacitySourceMode> OpacitySourceMode;
-
-	/**
-	* Alpha channel values larger than the threshold are considered occupied and will be contained in the bounding geometry.
-	* Raising this threshold slightly can reduce overdraw in particles using this animation asset.
-	*/
-	UPROPERTY(EditAnywhere, Category="Cutout", meta=(UIMin = "0", UIMax = "1"))
-	float AlphaThreshold;
-
-	void UpdateCutoutTexture();
-	void CacheDerivedData();
-#endif
+	virtual bool NeedsMIDsForMaterials() const override { return MaterialParameters.HasAnyBindings() || FontBindings.Num() > 0; }
 
 	UPROPERTY()
 	uint32 MaterialParamValidMask = 0;
-
-	const TArray<FVector2f>& GetCutoutData() const { return DerivedData.BoundingGeometry; }
 
 	FNiagaraRendererLayout RendererLayoutWithCustomSort;
 	FNiagaraRendererLayout RendererLayoutWithoutCustomSort;
@@ -424,8 +378,5 @@ protected:
 #endif
 
 private:
-	/** Derived data for this asset, generated off of SubUVTexture. */
-	FSubUVDerivedData DerivedData;
-
 	static TArray<TWeakObjectPtr<UNTPNiagaraFontRendererProperties>> FontRendererPropertiesToDeferredInit;
 };

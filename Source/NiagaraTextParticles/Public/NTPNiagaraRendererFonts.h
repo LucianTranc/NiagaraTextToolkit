@@ -46,7 +46,6 @@ private:
 		bool								bHasTranslucentMaterials = false;
 		bool								bSortCullOnGpu = false;
 		bool								bNeedsSort = false;
-		bool								bNeedsCull = false;
 
 		const FNiagaraRendererLayout*		RendererLayout = nullptr;
 		ENTPNiagaraSpriteVFLayout::Type		SortVariable = ENTPNiagaraSpriteVFLayout::Type(INDEX_NONE);
@@ -57,8 +56,6 @@ private:
 		uint32								ParticleFloatDataStride = 0;
 		uint32								ParticleHalfDataStride = 0;
 		uint32								ParticleIntDataStride = 0;
-
-		uint32								RendererVisTagOffset = INDEX_NONE;
 	};
 
 	/* Mesh collector classes */
@@ -73,7 +70,6 @@ private:
 
     static bool AllowComputeShaders(EShaderPlatform ShaderPlatform);
     static bool AllowGPUSorting(EShaderPlatform ShaderPlatform);
-    static bool AllowGPUCulling(EShaderPlatform ShaderPlatform);
 	void PrepareParticleSpriteRenderData(FParticleSpriteRenderData& ParticleSpriteRenderData, const FSceneViewFamily& ViewFamily, FNiagaraDynamicDataBase* InDynamicData, const FNiagaraSceneProxy* SceneProxy, ENiagaraGpuComputeTickStage::Type GpuReadyTickStage) const;
 	void PrepareParticleRenderBuffers(FRHICommandListBase& RHICmdList, FParticleSpriteRenderData& ParticleSpriteRenderData, FGlobalDynamicReadBuffer& DynamicReadBuffer) const;
 	void InitializeSortInfo(FParticleSpriteRenderData& ParticleSpriteRenderData, const FNiagaraSceneProxy& SceneProxy, const FSceneView& View, int32 ViewIndex, FNiagaraGPUSortInfo& OutSortInfo) const;
@@ -87,9 +83,7 @@ private:
 		const FSceneView& View,
 		const FNiagaraSceneProxy& SceneProxy,
 		FNTPNiagaraFontVertexFactory& VertexFactory,
-		uint32 NumInstances,
-		uint32 GPUCountBufferOffset,
-		bool bDoGPUCulling
+		uint32 NumInstances
 	) const;
 
 	//Cached data from the properties struct.
@@ -99,33 +93,22 @@ private:
 	ENiagaraSortMode SortMode;
 	FVector2f PivotInUVSpace;
 	float MacroUVRadius;
-	FVector2f SubImageSize;
 
 	uint32 NumIndicesPerInstance;
 
-	uint32 bSubImageBlend : 1;
 	uint32 bRemoveHMDRollInVR : 1;
 	uint32 bSortHighPrecision : 1;
 	uint32 bSortOnlyWhenTranslucent : 1;
 	uint32 bGpuLowLatencyTranslucency : 1;
-	uint32 bEnableCulling : 1;
-	uint32 bEnableDistanceCulling : 1;
 	uint32 bAccurateMotionVectors : 1;
 	uint32 bSetAnyBoundVars : 1;
-	uint32 bVisTagInParamStore : 1;
 
 	ENTPNiagaraRendererPixelCoverageMode PixelCoverageMode = ENTPNiagaraRendererPixelCoverageMode::Automatic;
 	float PixelCoverageBlend = 0.0f;
 
 	float MinFacingCameraBlendDistance;
 	float MaxFacingCameraBlendDistance;
-	FVector2f DistanceCullRange;
-	FNiagaraCutoutVertexBuffer CutoutVertexBuffer;
-	int32 NumCutoutVertexPerSubImage = 0;
 	uint32 MaterialParamValidMask = 0;
-
-	int32 RendererVisTagOffset;
-	int32 RendererVisibility;
 
 	int32 VFBoundOffsetsInParamStore[ENTPNiagaraSpriteVFLayout::Type::Num_Max];
 

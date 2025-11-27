@@ -37,31 +37,11 @@
 
 TArray<TWeakObjectPtr<UNTPNiagaraFontRendererProperties>> UNTPNiagaraFontRendererProperties::FontRendererPropertiesToDeferredInit;
 
-#if ENABLE_COOK_STATS
-class NiagaraCutoutCookStats
-{
-public:
-	static FCookStats::FDDCResourceUsageStats UsageStats;
-	static FCookStatsManager::FAutoRegisterCallback RegisterCookStats;
-};
-
-FCookStats::FDDCResourceUsageStats NiagaraCutoutCookStats::UsageStats;
-FCookStatsManager::FAutoRegisterCallback NiagaraCutoutCookStats::RegisterCookStats([](FCookStatsManager::AddStatFuncRef AddStat)
-{
-	UsageStats.LogStats(AddStat, TEXT("NiagaraCutout.Usage"), TEXT(""));
-});
-#endif // ENABLE_COOK_STATS
-
 UNTPNiagaraFontRendererProperties::UNTPNiagaraFontRendererProperties()
 	: Material(nullptr)
 	, MaterialUserParamBinding(FNiagaraTypeDefinition(UMaterialInterface::StaticClass()))
-	, bSubImageBlend(false)
 	, bRemoveHMDRollInVR(false)
 	, bSortOnlyWhenTranslucent(true)
-#if WITH_EDITORONLY_DATA
-	, BoundingMode(BVC_EightVertices)
-	, AlphaThreshold(0.1f)
-#endif // WITH_EDITORONLY_DATA
 {
 	AttributeBindings =
 	{
@@ -73,7 +53,6 @@ UNTPNiagaraFontRendererProperties::UNTPNiagaraFontRendererProperties()
 		&SpriteSizeBinding,
 		&SpriteFacingBinding,
 		&SpriteAlignmentBinding,
-		&SubImageIndexBinding,
 		&DynamicMaterialBinding,
 		&DynamicMaterial1Binding,
 		&DynamicMaterial2Binding,
@@ -95,9 +74,6 @@ UNTPNiagaraFontRendererProperties::UNTPNiagaraFontRendererProperties()
 		&PrevSpriteAlignmentBinding,
 		&PrevCameraOffsetBinding,
 		&PrevPivotOffsetBinding,
-
-		// The remaining bindings are not associated with attributes in the VF layout
-		&RendererVisibilityTagBinding,
 	};
 }
 
@@ -115,7 +91,7 @@ FNiagaraBoundsCalculator* UNTPNiagaraFontRendererProperties::CreateBoundsCalcula
 		return nullptr;
 	}
 
-	return new FNTPNiagaraBoundsCalculatorHelper<true, false, false>();
+	return new FNTPNiagaraBoundsCalculatorHelper<false, false, false>();
 }
 
 void UNTPNiagaraFontRendererProperties::GetUsedMaterials(const FNiagaraEmitterInstance* InEmitter, TArray<UMaterialInterface*>& OutMaterials) const
@@ -168,14 +144,6 @@ void UNTPNiagaraFontRendererProperties::PostLoad()
 		MaterialUserParamBinding.Parameter.SetType(MaterialDef);
 	}
 
-	if (!FPlatformProperties::RequiresCookedData())
-	{
-		if (CutoutTexture)
-		{	// Here we don't call UpdateCutoutTexture() to avoid issue with the material postload.
-			CutoutTexture->ConditionalPostLoad();
-		}
-		CacheDerivedData();
-	}
 	ChangeToPositionBinding(PositionBinding);
 	ChangeToPositionBinding(PrevPositionBinding);
 	PostLoadBindings(SourceMode);
@@ -247,7 +215,7 @@ void UNTPNiagaraFontRendererProperties::Serialize(FStructuredArchive::FRecord Re
 
 	if (Ar.IsCooking() || (FPlatformProperties::RequiresCookedData() && Ar.IsLoading()) || bIsCookedForEditor)
 	{
-		DerivedData.Serialize(Record.EnterField(TEXT("DerivedData")));
+		//DerivedData.Serialize(Record.EnterField(TEXT("DerivedData")));
 	}
 }
 
@@ -285,7 +253,6 @@ void UNTPNiagaraFontRendererProperties::InitBindings()
 		SpriteSizeBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_SPRITE_SIZE);
 		SpriteFacingBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_SPRITE_FACING);
 		SpriteAlignmentBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_SPRITE_ALIGNMENT);
-		SubImageIndexBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_SUB_IMAGE_INDEX);
 		DynamicMaterialBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_DYNAMIC_MATERIAL_PARAM);
 		DynamicMaterial1Binding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_DYNAMIC_MATERIAL_PARAM_1);
 		DynamicMaterial2Binding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_DYNAMIC_MATERIAL_PARAM_2);
@@ -295,8 +262,6 @@ void UNTPNiagaraFontRendererProperties::InitBindings()
 		PivotOffsetBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_PIVOT_OFFSET);
 		MaterialRandomBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_MATERIAL_RANDOM);
 		NormalizedAgeBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_NORMALIZED_AGE);
-		RendererVisibilityTagBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_VISIBILITY_TAG);
-
 		// Initialize UVRectBinding
 		FNiagaraVariable UVRectVar(FNiagaraTypeDefinition::GetVec4Def(), FName("Particles.UVRect"));
 		UVRectBinding = FNiagaraConstants::GetAttributeDefaultBinding(UVRectVar);
@@ -335,7 +300,6 @@ void UNTPNiagaraFontRendererProperties::CacheFromCompiledData(const FNiagaraData
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, SpriteSizeBinding, ENTPNiagaraSpriteVFLayout::Size);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, SpriteFacingBinding, ENTPNiagaraSpriteVFLayout::Facing);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, SpriteAlignmentBinding, ENTPNiagaraSpriteVFLayout::Alignment);
-	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, SubImageIndexBinding, ENTPNiagaraSpriteVFLayout::SubImage);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, CameraOffsetBinding, ENTPNiagaraSpriteVFLayout::CameraOffset);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, UVScaleBinding, ENTPNiagaraSpriteVFLayout::UVScale);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, PivotOffsetBinding, ENTPNiagaraSpriteVFLayout::PivotOffset);
@@ -368,7 +332,6 @@ void UNTPNiagaraFontRendererProperties::CacheFromCompiledData(const FNiagaraData
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, SpriteSizeBinding, ENTPNiagaraSpriteVFLayout::Size);
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, SpriteFacingBinding, ENTPNiagaraSpriteVFLayout::Facing);
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, SpriteAlignmentBinding, ENTPNiagaraSpriteVFLayout::Alignment);
-	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, SubImageIndexBinding, ENTPNiagaraSpriteVFLayout::SubImage);
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, CameraOffsetBinding, ENTPNiagaraSpriteVFLayout::CameraOffset);
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, UVScaleBinding, ENTPNiagaraSpriteVFLayout::UVScale);
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, PivotOffsetBinding, ENTPNiagaraSpriteVFLayout::PivotOffset);
@@ -468,27 +431,6 @@ void UNTPNiagaraFontRendererProperties::PostEditChangeProperty(struct FPropertyC
 	const FName PropertyName = PropertyChangedEvent.GetPropertyName();
 	const FName MemberPropertyName = PropertyChangedEvent.GetMemberPropertyName();
 
-	SubImageSize.X = FMath::Max(SubImageSize.X, 1.0);
-	SubImageSize.Y = FMath::Max(SubImageSize.Y, 1.0);
-
-	// DerivedData.BoundingGeometry in case we cleared the CutoutTexture
-	if (bUseMaterialCutoutTexture || CutoutTexture || DerivedData.BoundingGeometry.Num())
-	{
-		const bool bUpdateCutoutDDC =
-			PropertyName == TEXT("bUseMaterialCutoutTexture") ||
-			PropertyName == TEXT("CutoutTexture") ||
-			PropertyName == TEXT("BoundingMode") ||
-			PropertyName == TEXT("OpacitySourceMode") ||
-			PropertyName == TEXT("AlphaThreshold") ||
-			(bUseMaterialCutoutTexture && PropertyName == TEXT("Material"));
-
-		if (bUpdateCutoutDDC)
-		{
-			UpdateCutoutTexture();
-			CacheDerivedData();
-		}
-	}
-
 	// Update our MICs if we change material / material bindings
 	//-OPT: Could narrow down further to only static materials
 	if ((PropertyName == GET_MEMBER_NAME_CHECKED(UNTPNiagaraFontRendererProperties, Material)) ||
@@ -554,7 +496,6 @@ const TArray<FNiagaraVariable>& UNTPNiagaraFontRendererProperties::GetOptionalAt
 		Attrs.Add(SYS_PARAM_PARTICLES_SPRITE_SIZE);
 		Attrs.Add(SYS_PARAM_PARTICLES_SPRITE_FACING);
 		Attrs.Add(SYS_PARAM_PARTICLES_SPRITE_ALIGNMENT);
-		Attrs.Add(SYS_PARAM_PARTICLES_SUB_IMAGE_INDEX);
 		Attrs.Add(SYS_PARAM_PARTICLES_DYNAMIC_MATERIAL_PARAM);
 		Attrs.Add(SYS_PARAM_PARTICLES_DYNAMIC_MATERIAL_PARAM_1);
 		Attrs.Add(SYS_PARAM_PARTICLES_DYNAMIC_MATERIAL_PARAM_2);
@@ -613,21 +554,6 @@ void UNTPNiagaraFontRendererProperties::GetRendererWidgets(const FNiagaraEmitter
 void UNTPNiagaraFontRendererProperties::GetRendererFeedback(const FVersionedNiagaraEmitter& InEmitter, TArray<FText>& OutErrors, TArray<FText>& OutWarnings, TArray<FText>& OutInfo) const
 {
 	Super::GetRendererFeedback(InEmitter, OutErrors, OutWarnings, OutInfo);
-	if (InEmitter.GetEmitterData()->SpawnScriptProps.Script->GetVMExecutableData().IsValid())
-	{
-		if (bUseMaterialCutoutTexture || CutoutTexture)
-		{
-			if (UVScaleBinding.DoesBindingExistOnSource())
-			{
-				OutInfo.Add(LOCTEXT("SpriteRendererUVScaleWithCutout", "Cutouts will not be sized dynamically with UVScale variable. If scaling above 1.0, geometry may clip."));
-			}
-		}
-	}
-
-	if (CutoutTexture)
-	{
-		DerivedData.GetFeedback(CutoutTexture, (int32)SubImageSize.X, (int32)SubImageSize.Y, BoundingMode, AlphaThreshold, OpacitySourceMode, OutErrors, OutWarnings, OutInfo);
-	}
 }
 
 void UNTPNiagaraFontRendererProperties::GetRendererFeedback(const FVersionedNiagaraEmitter & InEmitter, TArray<FNiagaraRendererFeedback>&OutErrors, TArray<FNiagaraRendererFeedback>&OutWarnings, TArray<FNiagaraRendererFeedback>&OutInfo) const
@@ -658,78 +584,6 @@ void UNTPNiagaraFontRendererProperties::GetRendererTooltipWidgets(const FNiagara
 	}
 }
 
-void UNTPNiagaraFontRendererProperties::UpdateCutoutTexture()
-{
-	if (bUseMaterialCutoutTexture == false)
-	{
-		return;
-	}
-
-	CutoutTexture = nullptr;
-	if (Material == nullptr || Material->GetMaterial() == nullptr)
-	{
-		return;
-	}
-
-	// The property should probably come from the blend mode, but keeping consistency with how this has always been
-	for (const EMaterialProperty MaterialProperty : {MP_OpacityMask, MP_Opacity})
-	{
-		TArray<UMaterialExpression*> MaterialExpressions;
-		Material->GetMaterial()->GetExpressionsInPropertyChain(MaterialProperty, MaterialExpressions, nullptr);
-		for (UMaterialExpression* MaterialExpression : MaterialExpressions)
-		{
-			UMaterialExpressionTextureSample* TextureExpression = MaterialExpression ? Cast<UMaterialExpressionTextureSample>(MaterialExpression) : nullptr;
-			if (TextureExpression == nullptr)
-			{
-				continue;
-			}
-
-			UTexture* ExpressionTexture = TextureExpression->Texture;
-			if (UMaterialExpressionTextureSampleParameter* TextureParameterExpression = Cast<UMaterialExpressionTextureSampleParameter>(TextureExpression))
-			{
-				Material->GetTextureParameterValue(TextureExpression->GetParameterName(), ExpressionTexture);
-			}
-
-			// We bail on the first texture found, which isn't accurate but good enough
-			CutoutTexture = Cast<UTexture2D>(ExpressionTexture);
-			return;
-		}
-	}
-	// Note we do not get here unless we failed to find a cutout texture
-}
-
-void UNTPNiagaraFontRendererProperties::CacheDerivedData()
-{
-	if (CutoutTexture)
-	{
-		const FString KeyString = FSubUVDerivedData::GetDDCKeyString(CutoutTexture->Source.GetId(), (int32)SubImageSize.X, (int32)SubImageSize.Y, (int32)BoundingMode, AlphaThreshold, (int32)OpacitySourceMode);
-		TArray<uint8> Data;
-
-		COOK_STAT(auto Timer = NiagaraCutoutCookStats::UsageStats.TimeSyncWork());
-		if (GetDerivedDataCacheRef().GetSynchronous(*KeyString, Data, GetPathName()))
-		{
-			COOK_STAT(Timer.AddHit(Data.Num()));
-			DerivedData.BoundingGeometry.Empty(Data.Num() / sizeof(FVector2f));
-			DerivedData.BoundingGeometry.AddUninitialized(Data.Num() / sizeof(FVector2f));
-			FPlatformMemory::Memcpy(DerivedData.BoundingGeometry.GetData(), Data.GetData(), Data.Num() * Data.GetTypeSize());
-		}
-		else
-		{
-			DerivedData.Build(CutoutTexture, (int32)SubImageSize.X, (int32)SubImageSize.Y, BoundingMode, AlphaThreshold, OpacitySourceMode);
-
-			Data.Empty(DerivedData.BoundingGeometry.Num() * sizeof(FVector2f));
-			Data.AddUninitialized(DerivedData.BoundingGeometry.Num() * sizeof(FVector2f));
-			FPlatformMemory::Memcpy(Data.GetData(), DerivedData.BoundingGeometry.GetData(), DerivedData.BoundingGeometry.Num() * DerivedData.BoundingGeometry.GetTypeSize());
-			GetDerivedDataCacheRef().Put(*KeyString, Data, GetPathName());
-			COOK_STAT(Timer.AddMiss(Data.Num()));
-		}
-	}
-	else
-	{
-		DerivedData.BoundingGeometry.Empty();
-	}
-}
-
 FNiagaraVariable UNTPNiagaraFontRendererProperties::GetBoundAttribute(const FNiagaraVariableAttributeBinding* Binding) const
 {
 	if (!NeedsPreciseMotionVectors())
@@ -751,38 +605,4 @@ FNiagaraVariable UNTPNiagaraFontRendererProperties::GetBoundAttribute(const FNia
 }
 
 #endif // WITH_EDITORONLY_DATA
-
-
-int32 UNTPNiagaraFontRendererProperties::GetNumCutoutVertexPerSubimage() const
-{
-	if (DerivedData.BoundingGeometry.Num())
-	{
-		const int32 NumSubImages = FMath::Max<int32>(1, (int32)SubImageSize.X * (int32)SubImageSize.Y);
-		const int32 NumCutoutVertexPerSubImage = DerivedData.BoundingGeometry.Num() / NumSubImages;
-
-		// Based on BVC_FourVertices || BVC_EightVertices
-		ensure(NumCutoutVertexPerSubImage == 4 || NumCutoutVertexPerSubImage == 8);
-
-		return NumCutoutVertexPerSubImage;
-	}
-	else
-	{
-		return 0;
-	}
-}
-
-uint32 UNTPNiagaraFontRendererProperties::GetNumIndicesPerInstance() const
-{
-	// This is a based on cutout vertices making a triangle strip.
-	if (GetNumCutoutVertexPerSubimage() == 8)
-	{
-		return 18;
-	}
-	else
-	{
-		return 6;
-	}
-}
-
-#undef LOCTEXT_NAMESPACE
 

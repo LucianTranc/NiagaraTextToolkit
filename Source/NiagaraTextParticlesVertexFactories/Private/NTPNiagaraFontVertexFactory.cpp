@@ -5,7 +5,6 @@
 =============================================================================*/
 
 #include "NTPNiagaraFontVertexFactory.h"
-#include "NiagaraCutoutVertexBuffer.h"
 #include "ParticleHelper.h"
 #include "ParticleResources.h"
 #include "ShaderParameterUtils.h"
@@ -25,9 +24,6 @@ public:
 
 	void Bind(const FShaderParameterMap& ParameterMap)
 	{
-		NumCutoutVerticesPerFrame.Bind(ParameterMap, TEXT("NumCutoutVerticesPerFrame"));
-		CutoutGeometry.Bind(ParameterMap, TEXT("CutoutGeometry"));
-
 		//  		NiagaraParticleDataInt.Bind(ParameterMap, TEXT("NiagaraParticleDataInt"));
 		//  		Int32DataOffset.Bind(ParameterMap, TEXT("NiagaraInt32DataOffset"));
 		//  		Int32DataStride.Bind(ParameterMap, TEXT("NiagaraInt3DataStride"));
@@ -55,10 +51,6 @@ public:
 
 		ShaderBindings.Add(Shader->GetUniformBufferParameter<FNTPNiagaraFontVFLooseParameters>(), SpriteVF->LooseParameterUniformBuffer);
 
-		ShaderBindings.Add(NumCutoutVerticesPerFrame, SpriteVF->GetNumCutoutVerticesPerFrame());
-		FRHIShaderResourceView* NullSRV = GFNiagaraNullCutoutVertexBuffer.VertexBufferSRV;
-		ShaderBindings.Add(CutoutGeometry, SpriteVF->GetCutoutGeometrySRV() ? SpriteVF->GetCutoutGeometrySRV() : NullSRV);
-
 		ShaderBindings.Add(ParticleAlignmentMode, SpriteVF->GetAlignmentMode());
 		ShaderBindings.Add(ParticleFacingMode, SpriteVF->GetFacingMode());
 
@@ -68,13 +60,8 @@ public:
 
 private:
 
-	LAYOUT_FIELD(FShaderParameter, NumCutoutVerticesPerFrame);
-
 	LAYOUT_FIELD(FShaderParameter, ParticleAlignmentMode);
 	LAYOUT_FIELD(FShaderParameter, ParticleFacingMode);
-
-	LAYOUT_FIELD(FShaderResourceParameter, CutoutGeometry);
-
 
 	//  	LAYOUT_FIELD(FShaderResourceParameter, NiagaraParticleDataInt);
 	//  	LAYOUT_FIELD(FShaderParameter, Int32DataOffset);

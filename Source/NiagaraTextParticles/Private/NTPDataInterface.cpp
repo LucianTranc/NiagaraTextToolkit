@@ -1153,62 +1153,62 @@ void UNTPDataInterface::GetVMExternalFunction(const FVMExternalFunctionBindingIn
 	if (BindingInfo.Name == GetCharacterUVName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetCharacterUVVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetCharacterPositionName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetCharacterPositionVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetTextCharacterCountName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetTextCharacterCountVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetTextLineCountName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetTextLineCountVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetLineCharacterCountName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetLineCharacterCountVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetTextWordCountName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetTextWordCountVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetWordCharacterCountName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetWordCharacterCountVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetWordTrailingWhitespaceCountName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetWordTrailingWhitespaceCountVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetFilterWhitespaceCharactersName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetFilterWhitespaceCharactersVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetCharacterCountInWordRangeName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetCharacterCountInWordRangeVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetCharacterCountInLineRangeName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetCharacterCountInLineRangeVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else if (BindingInfo.Name == GetCharacterSpriteSizeName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetCharacterSpriteSizeVM(Context); });
-		UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+		//UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
 	}
 	else
 	{
