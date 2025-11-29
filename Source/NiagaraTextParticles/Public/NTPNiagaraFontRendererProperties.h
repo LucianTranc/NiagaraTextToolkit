@@ -12,6 +12,7 @@
 class UMaterialInstanceConstant;
 class FVertexFactoryType;
 class UFont;
+class UNTPDataInterface;
 
 USTRUCT(BlueprintType)
 struct FNTPFontParameterBinding
@@ -180,6 +181,10 @@ public:
 	/** Use the UMaterialInterface bound to this user variable if it is set to a valid value. If this is bound to a valid value and Material is also set, UserParamBinding wins.*/
 	UPROPERTY(EditAnywhere, Category = "Sprite Rendering")
 	FNiagaraUserParameterBinding MaterialUserParamBinding;
+
+	/** Bind an NTP Data Interface user parameter to provide character UV rects and sprite sizes for text rendering. */
+	UPROPERTY(EditAnywhere, Category = "Bindings")
+	FNiagaraUserParameterBinding NTPDataInterfaceBinding;
 
 	/** Whether or not to draw a single element for the Emitter or to draw the particles.*/
 	UPROPERTY(EditAnywhere, Category = "Sprite Rendering")

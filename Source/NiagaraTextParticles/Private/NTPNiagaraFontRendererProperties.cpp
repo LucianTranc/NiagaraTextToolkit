@@ -2,6 +2,7 @@
 
 #include "NTPNiagaraFontRendererProperties.h"
 #include "NTPNiagaraFontVertexFactory.h"
+#include "NTPDataInterface.h"
 #include "Materials/Material.h"
 #include "NiagaraRenderer.h"
 #include "NiagaraConstants.h"
@@ -40,6 +41,7 @@ TArray<TWeakObjectPtr<UNTPNiagaraFontRendererProperties>> UNTPNiagaraFontRendere
 UNTPNiagaraFontRendererProperties::UNTPNiagaraFontRendererProperties()
 	: Material(nullptr)
 	, MaterialUserParamBinding(FNiagaraTypeDefinition(UMaterialInterface::StaticClass()))
+	, NTPDataInterfaceBinding(FNiagaraTypeDefinition(UNTPDataInterface::StaticClass()))
 	, bRemoveHMDRollInVR(false)
 	, bSortOnlyWhenTranslucent(true)
 {

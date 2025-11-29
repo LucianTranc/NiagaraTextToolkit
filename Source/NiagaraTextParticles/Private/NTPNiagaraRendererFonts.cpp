@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "NTPNiagaraRendererFonts.h"
+#include "NTPDataInterface.h"
 #include "MaterialDomain.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -58,6 +59,12 @@ struct FNTPNiagaraDynamicDataFonts : public FNiagaraDynamicDataBase
 	TArray<UNiagaraDataInterface*> DataInterfacesBound;
 	TArray<UObject*> ObjectsBound;
 	TArray<uint8> ParameterDataBound;
+
+	/** Pointer to the NTP Data Interface proxy for render thread access to UV rects and sprite sizes. */
+	FNDIFontUVInfoProxy* NTPDIProxy = nullptr;
+
+	/** System instance ID for looking up RT data in the proxy. */
+	FNiagaraSystemInstanceID NTPSystemInstanceID = 0;
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -1039,8 +1046,6 @@ FNiagaraDynamicDataBase *FNTPNiagaraRendererFonts::GenerateDynamicData(const FNi
 					static UClass* CullProxyClass = nullptr;
 					if (CullProxyClass == nullptr)
 					{
-                        // log the call to FindObject
-						UE_LOG(LogTemp, Log, TEXT("FONT RENDERER: FindObject: /Script/Niagara.NiagaraCullProxyComponent"));
 						CullProxyClass = FindObject<UClass>(nullptr, TEXT("/Script/Niagara.NiagaraCullProxyComponent"));
 					}
 					if (CullProxyClass && AttachComponent->IsA(CullProxyClass))
@@ -1093,6 +1098,26 @@ FNiagaraDynamicDataBase *FNTPNiagaraRendererFonts::GenerateDynamicData(const FNi
 							// Bind page 0 of the font (the main atlas)
 							MID->SetTextureParameterValue(Binding.MaterialParameterName, Binding.Font->Textures[0]);
 						}
+					}
+				}
+			}
+		}
+
+		// Resolve NTP Data Interface binding to get proxy for render thread access
+		if (DynamicData)
+		{
+			if (Properties->NTPDataInterfaceBinding.Parameter.IsValid())
+			{
+				FNiagaraSystemInstance* SystemInstance = Emitter->GetParentSystemInstance();
+				if (SystemInstance)
+				{
+					DynamicData->NTPSystemInstanceID = SystemInstance->GetId();
+					FNiagaraParameterStore& UserParams = SystemInstance->GetInstanceParameters();
+					UNiagaraDataInterface* DI = UserParams.GetDataInterface(Properties->NTPDataInterfaceBinding.Parameter);
+					
+					if (UNTPDataInterface* NTPDI = Cast<UNTPDataInterface>(DI))
+					{
+						DynamicData->NTPDIProxy = NTPDI->GetFontProxy();
 					}
 				}
 			}
