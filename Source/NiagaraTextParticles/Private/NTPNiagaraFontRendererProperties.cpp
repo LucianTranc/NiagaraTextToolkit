@@ -65,6 +65,7 @@ UNTPNiagaraFontRendererProperties::UNTPNiagaraFontRendererProperties()
 		&MaterialRandomBinding,
 		&CustomSortingBinding,
 		&NormalizedAgeBinding,
+		&CharacterIndexBinding,
 
 		// These bindings are only actually used with accurate motion vectors (indices still need to align)
 		&PrevPositionBinding,
@@ -263,6 +264,7 @@ void UNTPNiagaraFontRendererProperties::InitBindings()
 		PivotOffsetBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_PIVOT_OFFSET);
 		MaterialRandomBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_MATERIAL_RANDOM);
 		NormalizedAgeBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_NORMALIZED_AGE);
+		CharacterIndexBinding = FNiagaraConstants::GetAttributeDefaultBinding(FNiagaraVariable(FNiagaraTypeDefinition::GetFloatDef(), TEXT("Particles.CharacterIndex")));
 
 		//Default custom sorting to age
 		CustomSortingBinding = FNiagaraConstants::GetAttributeDefaultBinding(SYS_PARAM_PARTICLES_NORMALIZED_AGE);
@@ -302,6 +304,7 @@ void UNTPNiagaraFontRendererProperties::CacheFromCompiledData(const FNiagaraData
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, UVScaleBinding, ENTPNiagaraSpriteVFLayout::UVScale);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, PivotOffsetBinding, ENTPNiagaraSpriteVFLayout::PivotOffset);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, NormalizedAgeBinding, ENTPNiagaraSpriteVFLayout::NormalizedAge);
+	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, CharacterIndexBinding, ENTPNiagaraSpriteVFLayout::CharacterIndex);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, MaterialRandomBinding, ENTPNiagaraSpriteVFLayout::MaterialRandom);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, CustomSortingBinding, ENTPNiagaraSpriteVFLayout::CustomSorting);
 	RendererLayoutWithCustomSort.SetVariableFromBinding(CompiledData, DynamicMaterialBinding, ENTPNiagaraSpriteVFLayout::MaterialParam0);
@@ -333,6 +336,7 @@ void UNTPNiagaraFontRendererProperties::CacheFromCompiledData(const FNiagaraData
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, UVScaleBinding, ENTPNiagaraSpriteVFLayout::UVScale);
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, PivotOffsetBinding, ENTPNiagaraSpriteVFLayout::PivotOffset);
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, NormalizedAgeBinding, ENTPNiagaraSpriteVFLayout::NormalizedAge);
+	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, CharacterIndexBinding, ENTPNiagaraSpriteVFLayout::CharacterIndex);
 	RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, MaterialRandomBinding, ENTPNiagaraSpriteVFLayout::MaterialRandom);
 	const bool bDynamicParam0Valid = RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, DynamicMaterialBinding,  ENTPNiagaraSpriteVFLayout::MaterialParam0);
 	const bool bDynamicParam1Valid = RendererLayoutWithoutCustomSort.SetVariableFromBinding(CompiledData, DynamicMaterial1Binding, ENTPNiagaraSpriteVFLayout::MaterialParam1);

@@ -101,6 +101,7 @@ namespace ENTPNiagaraSpriteVFLayout
 		MaterialRandom,
 		CustomSorting,
 		NormalizedAge,
+		CharacterIndex,
 
 		Num_Default,
 
@@ -325,6 +326,10 @@ public:
 	/** Which attribute should we use for Normalized Age? */
 	UPROPERTY(EditAnywhere, Category = "Bindings")
 	FNiagaraVariableAttributeBinding NormalizedAgeBinding;
+
+	/** Which attribute should we use for Character Index? */
+	UPROPERTY(EditAnywhere, Category = "Bindings")
+	FNiagaraVariableAttributeBinding CharacterIndexBinding;
 
 	/** If this array has entries, we will create a MaterialInstanceDynamic per Emitter instance from Material and set the Material parameters using the Niagara simulation variables listed.*/
 	UPROPERTY(EditAnywhere, Category = "Bindings")

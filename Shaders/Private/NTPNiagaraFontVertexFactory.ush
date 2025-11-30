@@ -697,11 +697,18 @@ int SafeGetInt(int Offset, uint InstanceID, int Default)
 	return Offset == -1 ? Default : NTPNiagaraFontVFLooseParameters.NiagaraParticleDataInt[Offset * NTPNiagaraFontVFLooseParameters.NiagaraIntDataStride + InstanceID];
 }
 
+float GetNiagaraCharacterIndex(uint InstanceID)
+{
+	return SafeGetFloat(NTPNiagaraFontVF.CharacterIndexDataOffset, InstanceID, NTPNiagaraFontVF.DefaultCharacterIndex);
+}
+
 // Function to lookup UVs via indirection
 float4 GetNiagaraUVRectIndirect(uint InstanceID)
 {
+	int CharIndex = (int)GetNiagaraCharacterIndex(InstanceID);
+
 	// 2. Look up the Unicode value from the DI buffer
-	uint Unicode = NTPNiagaraFontVFLooseParameters.UnicodeBuffer[InstanceID];
+	uint Unicode = NTPNiagaraFontVFLooseParameters.UnicodeBuffer[CharIndex];
 
 	// 3. Look up the UV Rect from the DI buffer
 	// CharacterTextureUvsBuffer is bound as Buffer<float4>

@@ -487,6 +487,7 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 	PerViewUniformParameters.DefaultCamOffset = 0.0f;
 	PerViewUniformParameters.DefaultPrevCamOffset = PerViewUniformParameters.DefaultCamOffset;
 	PerViewUniformParameters.DefaultNormAge = 0.0f;
+	PerViewUniformParameters.DefaultCharacterIndex = 0.0f;
 	PerViewUniformParameters.DefaultFacing = FVector4f(1.0f, 0.0f, 0.0f, 0.0f);
 	PerViewUniformParameters.DefaultPrevFacing = PerViewUniformParameters.DefaultFacing;
 	PerViewUniformParameters.DefaultAlignment = FVector4f(1.0f, 0.0f, 0.0f, 0.0f);
@@ -568,6 +569,7 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 		PerViewUniformParameters.UVScaleDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::UVScale].GetGPUOffset();
 		PerViewUniformParameters.PivotOffsetDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::PivotOffset].GetGPUOffset();
 		PerViewUniformParameters.NormalizedAgeDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::NormalizedAge].GetGPUOffset();
+		PerViewUniformParameters.CharacterIndexDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::CharacterIndex].GetGPUOffset();
 		PerViewUniformParameters.MaterialRandomDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::MaterialRandom].GetGPUOffset();
 		if (bAccurateMotionVectors)
 		{
@@ -599,6 +601,7 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 		PerViewUniformParameters.UVScaleDataOffset = INDEX_NONE;
 		PerViewUniformParameters.PivotOffsetDataOffset = INDEX_NONE;
 		PerViewUniformParameters.NormalizedAgeDataOffset = INDEX_NONE;
+		PerViewUniformParameters.CharacterIndexDataOffset = INDEX_NONE;
 		PerViewUniformParameters.MaterialRandomDataOffset = INDEX_NONE;
 	}
 	else
@@ -673,6 +676,9 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 					break;
 				case ENTPNiagaraSpriteVFLayout::Type::NormalizedAge:
 					FMemory::Memcpy(&PerViewUniformParameters.DefaultNormAge, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(float));
+					break;
+				case ENTPNiagaraSpriteVFLayout::Type::CharacterIndex:
+					FMemory::Memcpy(&PerViewUniformParameters.DefaultCharacterIndex, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(float));
 					break;
 				case ENTPNiagaraSpriteVFLayout::Type::PrevPosition:
 					FMemory::Memcpy(&PerViewUniformParameters.DefaultPrevPos, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(FVector3f));
