@@ -691,9 +691,39 @@ float2 GetNiagaraPivotOffset(uint InstanceID)
 	return SafeGetVec2(NTPNiagaraFontVF.PivotOffsetDataOffset, InstanceID, NTPNiagaraFontVF.DefaultPivotOffset);
 }
 
+// Helper to safely get int attribute
+int SafeGetInt(int Offset, uint InstanceID, int Default)
+{
+	return Offset == -1 ? Default : NTPNiagaraFontVFLooseParameters.NiagaraParticleDataInt[Offset * NTPNiagaraFontVFLooseParameters.NiagaraIntDataStride + InstanceID];
+}
+
+// Function to lookup UVs via indirection
+float4 GetNiagaraUVRectIndirect(uint InstanceID)
+{
+	// 2. Look up the Unicode value from the DI buffer
+	uint Unicode = NTPNiagaraFontVFLooseParameters.UnicodeBuffer[InstanceID];
+
+	// 3. Look up the UV Rect from the DI buffer
+	// CharacterTextureUvsBuffer is bound as Buffer<float4>
+	
+	float4 RawRect = NTPNiagaraFontVFLooseParameters.CharacterTextureUvsBuffer[Unicode];
+	
+	float4 UVRect;
+	// DI Data Layout: (USize, VSize, UStart, VStart) -> (x, y, z, w)
+	// Shader Expects: (UStart, VStart, USize, VSize) -> (z, w, x, y)
+	
+	// Map Size (0, 1) to zw
+	UVRect.zw = RawRect.xy; // USize, VSize
+	
+	// Map Start (2, 3) to xy
+	UVRect.xy = RawRect.zw; // UStart, VStart
+
+	return UVRect;
+}
+
 float4 GetNiagaraUVRect(uint InstanceID)
 {
-	return SafeGetVec4(NTPNiagaraFontVF.UVRectDataOffset, InstanceID, NTPNiagaraFontVF.DefaultUVRect);
+	return GetNiagaraUVRectIndirect(InstanceID);
 }
 
 float2 GetNiagaraPreviousPivotOffset(uint InstanceID)

@@ -475,7 +475,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 	PerViewUniformParameters.DefaultSize = FVector2f(50.f, 50.0f);
 	PerViewUniformParameters.DefaultPrevSize = PerViewUniformParameters.DefaultSize;
 	PerViewUniformParameters.DefaultUVScale = FVector2f(1.0f, 1.0f);
-	PerViewUniformParameters.DefaultUVRect = FVector4f(0.0f, 0.0f, 1.0f, 1.0f);
 	PerViewUniformParameters.DefaultPivotOffset = PivotInUVSpace;
 	PerViewUniformParameters.DefaultPrevPivotOffset = PerViewUniformParameters.DefaultPivotOffset;
 	PerViewUniformParameters.DefaultVelocity = FVector3f(0.f, 0.0f, 0.0f);
@@ -568,7 +567,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 		PerViewUniformParameters.CameraOffsetDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::CameraOffset].GetGPUOffset();
 		PerViewUniformParameters.UVScaleDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::UVScale].GetGPUOffset();
 		PerViewUniformParameters.PivotOffsetDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::PivotOffset].GetGPUOffset();
-		PerViewUniformParameters.UVRectDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::UVRect].GetGPUOffset();
 		PerViewUniformParameters.NormalizedAgeDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::NormalizedAge].GetGPUOffset();
 		PerViewUniformParameters.MaterialRandomDataOffset = VFVariables[ENTPNiagaraSpriteVFLayout::MaterialRandom].GetGPUOffset();
 		if (bAccurateMotionVectors)
@@ -600,7 +598,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 		PerViewUniformParameters.CameraOffsetDataOffset = INDEX_NONE;
 		PerViewUniformParameters.UVScaleDataOffset = INDEX_NONE;
 		PerViewUniformParameters.PivotOffsetDataOffset = INDEX_NONE;
-		PerViewUniformParameters.UVRectDataOffset = INDEX_NONE;
 		PerViewUniformParameters.NormalizedAgeDataOffset = INDEX_NONE;
 		PerViewUniformParameters.MaterialRandomDataOffset = INDEX_NONE;
 	}
@@ -667,9 +664,6 @@ FNTPNiagaraFontUniformBufferRef FNTPNiagaraRendererFonts::CreateViewUniformBuffe
 					break;
 				case ENTPNiagaraSpriteVFLayout::Type::PivotOffset:
 					FMemory::Memcpy(&PerViewUniformParameters.DefaultPivotOffset, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(FVector2f));
-					break;
-				case ENTPNiagaraSpriteVFLayout::Type::UVRect:
-					FMemory::Memcpy(&PerViewUniformParameters.DefaultUVRect, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(FVector4f));
 					break;
 				case ENTPNiagaraSpriteVFLayout::Type::MaterialRandom:
 					FMemory::Memcpy(&PerViewUniformParameters.DefaultMatRandom, DynamicDataSprites->ParameterDataBound.GetData() + VFBoundOffsetsInParamStore[i], sizeof(float));
@@ -776,7 +770,35 @@ void FNTPNiagaraRendererFonts::CreateMeshBatchForView(
 	FNTPNiagaraFontVFLooseParameters VFLooseParams;
 	VFLooseParams.NiagaraParticleDataFloat = ParticleSpriteRenderData.ParticleFloatSRV;
 	VFLooseParams.NiagaraParticleDataHalf = ParticleSpriteRenderData.ParticleHalfSRV;
+	VFLooseParams.NiagaraParticleDataInt = ParticleSpriteRenderData.ParticleIntSRV;
 	VFLooseParams.NiagaraFloatDataStride = FMath::Max(ParticleSpriteRenderData.ParticleFloatDataStride, ParticleSpriteRenderData.ParticleHalfDataStride);
+	VFLooseParams.NiagaraIntDataStride = ParticleSpriteRenderData.ParticleIntDataStride;
+
+	VFLooseParams.UnicodeBuffer = FNiagaraRenderer::GetDummyIntBuffer();
+	VFLooseParams.CharacterTextureUvsBuffer = FNiagaraRenderer::GetDummyFloatBuffer();
+
+	if (ParticleSpriteRenderData.DynamicDataSprites && ParticleSpriteRenderData.DynamicDataSprites->NTPDIProxy)
+	{
+		FNDIFontUVInfoProxy* Proxy = ParticleSpriteRenderData.DynamicDataSprites->NTPDIProxy;
+		const FNiagaraSystemInstanceID InstanceID = ParticleSpriteRenderData.DynamicDataSprites->NTPSystemInstanceID;
+
+		if (FNDIFontUVInfoProxy::FRTInstanceData* InstanceDataPtr = Proxy->SystemInstancesToInstanceData_RT.Find(InstanceID))
+		{
+			if (FNDIFontUVInfoProxy::FRTInstanceData* InstanceData = InstanceDataPtr)
+			{
+				UE_LOG(LogNiagaraTextParticles, Log, TEXT("NTP Proxy (RT): InstanceID=%llu NumChars=%u NumLines=%u NumWords=%u"), (uint64)InstanceID, InstanceData->NumChars, InstanceData->NumLines, InstanceData->NumWords);
+
+				if (InstanceData->UnicodeBuffer.SRV.IsValid())
+				{
+					VFLooseParams.UnicodeBuffer = InstanceData->UnicodeBuffer.SRV;
+				}
+				if (InstanceData->CharacterTextureUvsBuffer.SRV.IsValid())
+				{
+					VFLooseParams.CharacterTextureUvsBuffer = InstanceData->CharacterTextureUvsBuffer.SRV;
+				}
+			}
+		}
+	}
 
 	FMaterialRenderProxy* MaterialRenderProxy = ParticleSpriteRenderData.DynamicDataSprites->Material;
 	check(MaterialRenderProxy);
