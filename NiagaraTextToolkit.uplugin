@@ -27,11 +27,6 @@
 			"LoadingPhase": "Default"
 		},
 		{
-			"Name": "NiagaraTextToolkitVertexFactory",
-			"Type": "Runtime",
-			"LoadingPhase": "PostConfigInit"
-		},
-		{
 			"Name": "NiagaraTextToolkitEditor",
 			"Type": "Editor",
 			"LoadingPhase": "Default"

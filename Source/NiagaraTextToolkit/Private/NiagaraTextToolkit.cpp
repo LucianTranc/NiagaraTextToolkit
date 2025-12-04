@@ -4,12 +4,16 @@
 
 #include "NiagaraTextToolkit.h"
 #include "Modules/ModuleManager.h"
+#include "Interfaces/IPluginManager.h"
+#include "Misc/Paths.h"
+#include "ShaderCore.h"
 
 #define LOCTEXT_NAMESPACE "FNiagaraTextToolkitModule"
 
 void FNiagaraTextToolkitModule::StartupModule()
 {
-    // No shader mapping here anymore – handled by NiagaraTextToolkitVertexFactory module.
+    FString PluginShaderDir = FPaths::Combine(IPluginManager::Get().FindPlugin(TEXT("NiagaraTextToolkit"))->GetBaseDir(), TEXT("Shaders"));
+    AddShaderSourceDirectoryMapping(TEXT("/Plugin/NiagaraTextToolkit"), PluginShaderDir);
 }
 
 void FNiagaraTextToolkitModule::ShutdownModule()

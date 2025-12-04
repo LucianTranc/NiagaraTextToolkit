@@ -66,7 +66,7 @@ void GetCharacterPosition_{ParameterName}(in int In_CharacterIndex, out float3 O
 }
 
 // Returns the sprite size in pixels (Width, Height) for the given character index
-void GetCharacterSpriteSize_{ParameterName}(in int In_CharacterIndex, out float Out_SpriteWidth, out float Out_SpriteHeight)
+void GetCharacterSpriteSize_{ParameterName}(in int In_CharacterIndex, out float2 Out_SpriteSize)
 {
 	int UnicodeBase = {ParameterName}_Offset_Unicode + In_CharacterIndex;
 	int Unicode = asint({ParameterName}_PackedBuffer[UnicodeBase]);
@@ -74,13 +74,13 @@ void GetCharacterSpriteSize_{ParameterName}(in int In_CharacterIndex, out float 
 	if (Unicode >= 0 && Unicode < {ParameterName}_NumRects)
 	{
 		int Base = {ParameterName}_Offset_Sizes + Unicode * 2;
-		Out_SpriteWidth  = {ParameterName}_PackedBuffer[Base + 0];
-		Out_SpriteHeight = {ParameterName}_PackedBuffer[Base + 1];
+		float Width  = {ParameterName}_PackedBuffer[Base + 0];
+		float Height = {ParameterName}_PackedBuffer[Base + 1];
+		Out_SpriteSize = float2(Width, Height);
 	}
 	else
 	{
-		Out_SpriteWidth  = 0.0f;
-		Out_SpriteHeight = 0.0f;
+		Out_SpriteSize = float2(0.0f, 0.0f);
 	}
 }
 

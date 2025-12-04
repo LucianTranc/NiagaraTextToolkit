@@ -3,6 +3,7 @@
 #include "NTTDataInterface.h"
 #include "NiagaraCompileHashVisitor.h"
 #include "NiagaraSystemInstance.h"
+#include "NiagaraEmitterInstance.h"
 #include "NiagaraShaderParametersBuilder.h"
 #include "RHICommandList.h"
 #include "RenderResource.h"
@@ -155,21 +156,38 @@ bool UNTTDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 	// instead of updating the render thread every tick, we do it once manually when initalizing.
 	// We don't need per tick updates since the data doesn't change over the life of the system,
 	// and if it doesn, we just call InitPerInstanceData again.
-	FNDIFontUVInfoInstanceData* DataForRT = new FNDIFontUVInfoInstanceData(*InstanceData);
-	FNDIFontUVInfoProxy* RT_Proxy = GetFontProxy();
-	FNiagaraSystemInstanceID InstanceID = SystemInstance->GetId();
-
-	ENQUEUE_RENDER_COMMAND(InitNTTDIProxy)(
-		[RT_Proxy, DataForRT, InstanceID](FRHICommandListImmediate& RHICmdList)
+	// We only need to do this if we have a GPU emitter in the system.
+	bool bHasGPUEmitter = false;
+	if (SystemInstance)
+	{
+		for (const auto& Emitter : SystemInstance->GetEmitters())
 		{
-			if (RT_Proxy)
+			if (Emitter->GetSimTarget() == ENiagaraSimTarget::GPUComputeSim)
 			{
-				RT_Proxy->UpdateData_RT(DataForRT, InstanceID, RHICmdList);
+				bHasGPUEmitter = true;
+				break;
 			}
-			// Clean up the copy
-			delete DataForRT;
 		}
-	);
+	}
+
+	if (bHasGPUEmitter)
+	{
+		FNDIFontUVInfoInstanceData* DataForRT = new FNDIFontUVInfoInstanceData(*InstanceData);
+		FNDIFontUVInfoProxy* RT_Proxy = GetFontProxy();
+		FNiagaraSystemInstanceID InstanceID = SystemInstance->GetId();
+
+		ENQUEUE_RENDER_COMMAND(InitNTTDIProxy)(
+			[RT_Proxy, DataForRT, InstanceID](FRHICommandListImmediate& RHICmdList)
+			{
+				if (RT_Proxy)
+				{
+					RT_Proxy->UpdateData_RT(DataForRT, InstanceID, RHICmdList);
+				}
+				// Clean up the copy
+				delete DataForRT;
+			}
+		);
+	}
 
 	return true;
 }
@@ -755,8 +773,7 @@ void UNTTDataInterface::GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunct
 	SigSpriteSize.bMemberFunction = true;
 	SigSpriteSize.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
 	SigSpriteSize.AddInput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("CharacterIndex")));
-	SigSpriteSize.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetFloatDef(), TEXT("SpriteWidth")));
-	SigSpriteSize.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetFloatDef(), TEXT("SpriteHeight")));
+	SigSpriteSize.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetVec2Def(), TEXT("SpriteSize")));
 	OutFunctions.Add(SigSpriteSize);
 }
 
@@ -1240,8 +1257,7 @@ void UNTTDataInterface::GetCharacterSpriteSizeVM(FVectorVMExternalFunctionContex
 {
 	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
 	FNDIInputParam<int32> InCharacterIndex(Context);
-	FNDIOutputParam<float> OutWidth(Context);
-	FNDIOutputParam<float> OutHeight(Context);
+	FNDIOutputParam<FVector2f> OutSpriteSize(Context);
 
 	const TArray<int32>& Unicode = InstData.Get()->Unicode;
 	const TArray<FVector2f>& SpriteSizes = InstData.Get()->CharacterSpriteSizes;
@@ -1256,13 +1272,11 @@ void UNTTDataInterface::GetCharacterSpriteSizeVM(FVectorVMExternalFunctionContex
 		if (NumSizes > 0 && UnicodeIndex >= 0 && UnicodeIndex < NumSizes)
 		{
 			const FVector2f& Size = SpriteSizes[UnicodeIndex];
-			OutWidth.SetAndAdvance(Size.X);
-			OutHeight.SetAndAdvance(Size.Y);
+			OutSpriteSize.SetAndAdvance(Size);
 		}
 		else
 		{
-			OutWidth.SetAndAdvance(0.0f);
-			OutHeight.SetAndAdvance(0.0f);
+			OutSpriteSize.SetAndAdvance(FVector2f(0.0f, 0.0f));
 		}
 	}
 }

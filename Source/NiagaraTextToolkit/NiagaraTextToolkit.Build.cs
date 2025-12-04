@@ -40,11 +40,9 @@ public class NiagaraTextToolkit : ModuleRules
 				"Engine",
 				"RHI",
 				"Niagara",
-				"NiagaraVertexFactories",
                 "RenderCore",
 				"NiagaraCore",
 				"Projects",
-				"NiagaraTextToolkitVertexFactory",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
