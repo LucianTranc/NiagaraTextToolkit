@@ -128,7 +128,7 @@ bool UNTTDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 		UE_LOG(LogNiagaraTextToolkit, Warning, TEXT("NTT DI: Failed to get font info from FontAsset '%s'"), *GetNameSafe(FontAsset));
 	}
 	
-	TArray<FVector2f> CharacterPositionsUnfiltered = GetCharacterPositions(CharacterSpriteSizes, VerticalOffsets, Kerning, InputText, HorizontalAlignment, VerticalAlignment);
+	TArray<FVector2f> CharacterPositionsUnfiltered = GetCharacterPositions(CharacterSpriteSizes, VerticalOffsets, Kerning, VerticalOffset, KerningOffset, WhitespaceWidthMultiplier, InputText, HorizontalAlignment, VerticalAlignment);
 	
 	TArray<int32> OutUnicode;
 	TArray<FVector2f> OutCharacterPositions;
@@ -269,7 +269,7 @@ bool UNTTDataInterface::GetFontInfo(const UFont* FontAsset, TArray<FVector4>& Ou
 	}
 }
 
-TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2f>& CharacterSpriteSizes, const TArray<int32>& VerticalOffsets, int32 Kerning, FString InputString, ENTTTextHorizontalAlignment XAlignment, ENTTTextVerticalAlignment YAlignment)
+TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2f>& CharacterSpriteSizes, const TArray<int32>& VerticalOffsets, int32 Kerning, float ExtraVerticalOffset, float ExtraKerningOffset, float WhitespaceWidthMultiplier, FString InputString, ENTTTextHorizontalAlignment XAlignment, ENTTTextVerticalAlignment YAlignment)
 {
 
 	TArray<FVector2f> CharacterPositionsUnfiltered;
@@ -291,7 +291,7 @@ TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2
 		GlobalMaxGlyphHeight = FMath::Max(GlobalMaxGlyphHeight, Size.Y);
 	}
 
-	const float CharIncrement = static_cast<float>(Kerning); // No extra horizontal spacing in this data interface.
+	const float CharIncrement = static_cast<float>(Kerning) + ExtraKerningOffset; // No extra horizontal spacing in this data interface.
 
 	// Per-line widths, heights, and tops
 	// tops are aligned at 0, so the top of the first line is at 0, and the top of the second line is the height of the first line, etc.
@@ -322,9 +322,14 @@ TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2
 
 			const FVector2f& GlyphSize = CharacterSpriteSizes[Code];
 
-			const float SizeX = GlyphSize.X;
+			float SizeX = GlyphSize.X;
 			const float SizeY = GlyphSize.Y;
 			const float TopY  = static_cast<float>(VerticalOffsets[Code]); // how far from the line's origin its top is
+
+			if (IsWhitespaceChar(Code))
+			{
+				SizeX *= WhitespaceWidthMultiplier;
+			}
 
 			const float BottomY = TopY + SizeY; // how far from the line's origin its bottom is
 			MaxBottom = FMath::Max(MaxBottom, BottomY);
@@ -345,6 +350,11 @@ TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2
 		LineHeights.Add(LineHeight);
 		LineTops.Add(TotalHeight);
 		TotalHeight += LineHeight;
+
+		if (It.HasNextCharacter())
+		{
+			TotalHeight += ExtraVerticalOffset;
+		}
 	}
 
 	// if there are no lines, return an array of all zeros (in the case where all characters are newlines)
@@ -441,9 +451,14 @@ TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2
 
 			const FVector2f& GlyphSize = CharacterSpriteSizes[Code];
 
-			const float SizeX = GlyphSize.X;
+			float SizeX = GlyphSize.X;
 			const float SizeY = GlyphSize.Y;
 			const float TopY  = static_cast<float>(VerticalOffsets[Code]);
+
+			if (IsWhitespaceChar(Code))
+			{
+				SizeX *= WhitespaceWidthMultiplier;
+			}
 
 			const float GlyphLeft = LineStartX[LineIdx] + LineX;
 			const float GlyphTop  = LineTop + TopY;
@@ -840,6 +855,9 @@ bool UNTTDataInterface::CopyToInternal(UNiagaraDataInterface* Destination) const
 		DestTyped->InputText = InputText;
 		DestTyped->HorizontalAlignment = HorizontalAlignment;
 		DestTyped->VerticalAlignment = VerticalAlignment;
+		DestTyped->VerticalOffset = VerticalOffset;
+		DestTyped->KerningOffset = KerningOffset;
+		DestTyped->WhitespaceWidthMultiplier = WhitespaceWidthMultiplier;
 		DestTyped->bFilterWhitespaceCharacters = bFilterWhitespaceCharacters;
 		return true;
 	}
@@ -858,6 +876,9 @@ bool UNTTDataInterface::Equals(const UNiagaraDataInterface* Other) const
 		&& OtherTyped->InputText == InputText
 		&& OtherTyped->HorizontalAlignment == HorizontalAlignment
 		&& OtherTyped->VerticalAlignment == VerticalAlignment
+		&& OtherTyped->VerticalOffset == VerticalOffset
+		&& OtherTyped->KerningOffset == KerningOffset
+		&& OtherTyped->WhitespaceWidthMultiplier == WhitespaceWidthMultiplier
 		&& OtherTyped->bFilterWhitespaceCharacters == bFilterWhitespaceCharacters;
 		UE_LOG(LogNiagaraTextToolkit, Verbose, TEXT("NTT DI: Equals - ThisAsset=%s OtherAsset=%s Result=%s"),
 		*GetNameSafe(FontAsset),

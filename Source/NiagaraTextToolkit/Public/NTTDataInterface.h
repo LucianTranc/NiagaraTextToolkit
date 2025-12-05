@@ -311,6 +311,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Vertical Alignment"))
 	ENTTTextVerticalAlignment VerticalAlignment = ENTTTextVerticalAlignment::NTT_TVA_Center;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Vertical Offset"))
+	float VerticalOffset = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Kerning Offset"))
+	float KerningOffset = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Whitespace Width Multiplier"))
+	float WhitespaceWidthMultiplier = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Filter Whitespace Characters"))
 	bool bFilterWhitespaceCharacters = true;
 
@@ -368,7 +377,7 @@ private:
 	static const FName GetCharacterSpriteSizeName;
 
 	// Computes per-character positions in local text space using per-glyph sprite sizes in pixels.
-	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector2f>& CharacterSpriteSizes, const TArray<int32>& VerticalOffsets, int32 Kerning, FString InputString, ENTTTextHorizontalAlignment XAlignment, ENTTTextVerticalAlignment YAlignment);
+	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector2f>& CharacterSpriteSizes, const TArray<int32>& VerticalOffsets, int32 Kerning, float ExtraVerticalOffset, float ExtraKerningOffset, float WhitespaceWidthMultiplier, FString InputString, ENTTTextHorizontalAlignment XAlignment, ENTTTextVerticalAlignment YAlignment);
 
 	// Extracts per-glyph sprite sizes (pixels), normalized texture UVs, vertical offsets, and global kerning from the font asset.
 	static bool GetFontInfo(const UFont* FontAsset, TArray<FVector4>& OutCharacterTextureUvs, TArray<FVector2f>& OutCharacterSpriteSizes, TArray<int32>& OutVerticalOffsets, int32& OutKerning);
