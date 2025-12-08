@@ -113,10 +113,13 @@ const FName UNTTDataInterface::GetFilterWhitespaceCharactersName(TEXT("GetFilter
 const FName UNTTDataInterface::GetCharacterCountInWordRangeName(TEXT("GetCharacterCountInWordRange"));
 const FName UNTTDataInterface::GetCharacterCountInLineRangeName(TEXT("GetCharacterCountInLineRange"));
 const FName UNTTDataInterface::GetCharacterSpriteSizeName(TEXT("GetCharacterSpriteSize"));
+const FName UNTTDataInterface::GetTextHeightName(TEXT("GetTextHeight"));
 
 // Creates a new data object to store our data
 bool UNTTDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSystemInstance* SystemInstance)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(NTTDataInterface_InitPerInstanceData);
+
 	FNDIFontUVInfoInstanceData* InstanceData = new (PerInstanceData) FNDIFontUVInfoInstanceData;
 
 	TArray<FVector4> CharacterTextureUvs;
@@ -128,7 +131,8 @@ bool UNTTDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 		UE_LOG(LogNiagaraTextToolkit, Warning, TEXT("NTT DI: Failed to get font info from FontAsset '%s'"), *GetNameSafe(FontAsset));
 	}
 	
-	TArray<FVector2f> CharacterPositionsUnfiltered = GetCharacterPositions(CharacterSpriteSizes, VerticalOffsets, Kerning, VerticalOffset, KerningOffset, WhitespaceWidthMultiplier, InputText, HorizontalAlignment, VerticalAlignment);
+	float TotalTextHeight = 0.0f;
+	TArray<FVector2f> CharacterPositionsUnfiltered = GetCharacterPositions(CharacterSpriteSizes, VerticalOffsets, Kerning, VerticalOffset, KerningOffset, WhitespaceWidthMultiplier, InputText, HorizontalAlignment, VerticalAlignment, TotalTextHeight);
 	
 	TArray<int32> OutUnicode;
 	TArray<FVector2f> OutCharacterPositions;
@@ -151,6 +155,7 @@ bool UNTTDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 	InstanceData->LineCharacterCounts = MoveTemp(OutLineCharacterCounts);
 	InstanceData->WordStartIndices = MoveTemp(OutWordStartIndices);
 	InstanceData->WordCharacterCounts = MoveTemp(OutWordCharacterCounts);
+	InstanceData->TotalTextHeight = TotalTextHeight;
 
 	// PUSH TO RENDER THREAD ONCE
 	// instead of updating the render thread every tick, we do it once manually when initalizing.
@@ -269,10 +274,11 @@ bool UNTTDataInterface::GetFontInfo(const UFont* FontAsset, TArray<FVector4>& Ou
 	}
 }
 
-TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2f>& CharacterSpriteSizes, const TArray<int32>& VerticalOffsets, int32 Kerning, float ExtraVerticalOffset, float ExtraKerningOffset, float WhitespaceWidthMultiplier, FString InputString, ENTTTextHorizontalAlignment XAlignment, ENTTTextVerticalAlignment YAlignment)
+TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2f>& CharacterSpriteSizes, const TArray<int32>& VerticalOffsets, int32 Kerning, float ExtraVerticalOffset, float ExtraKerningOffset, float WhitespaceWidthMultiplier, FString InputString, ENTTTextHorizontalAlignment XAlignment, ENTTTextVerticalAlignment YAlignment, float& OutTotalHeight)
 {
 
 	TArray<FVector2f> CharacterPositionsUnfiltered;
+	OutTotalHeight = 0.0f;
 
 	const int32 TextLength = InputString.Len();
 	if (TextLength <= 0 || CharacterSpriteSizes.Num() == 0)
@@ -356,6 +362,8 @@ TArray<FVector2f> UNTTDataInterface::GetCharacterPositions(const TArray<FVector2
 			TotalHeight += ExtraVerticalOffset;
 		}
 	}
+	
+	OutTotalHeight = TotalHeight;
 
 	// if there are no lines, return an array of all zeros (in the case where all characters are newlines)
 	const int32 NumLines = LineWidths.Num();
@@ -790,6 +798,17 @@ void UNTTDataInterface::GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunct
 	SigSpriteSize.AddInput(FNiagaraVariable(FNiagaraTypeDefinition::GetIntDef(), TEXT("CharacterIndex")));
 	SigSpriteSize.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetVec2Def(), TEXT("SpriteSize")));
 	OutFunctions.Add(SigSpriteSize);
+
+	// Register GetTextHeight
+	FNiagaraFunctionSignature SigTextHeight;
+	SigTextHeight.Name = GetTextHeightName;
+#if WITH_EDITORONLY_DATA
+	SigTextHeight.Description = LOCTEXT("GetTextHeightDesc", "Returns the total height of the text block from the top of the first line to the bottom of the last line.");
+#endif
+	SigTextHeight.bMemberFunction = true;
+	SigTextHeight.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
+	SigTextHeight.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetFloatDef(), TEXT("TextHeight")));
+	OutFunctions.Add(SigTextHeight);
 }
 
 void UNTTDataInterface::BuildShaderParameters(FNiagaraShaderParametersBuilder& ShaderParametersBuilder) const
@@ -824,6 +843,7 @@ void UNTTDataInterface::SetShaderParameters(const FNiagaraDataInterfaceSetShader
 		ShaderParameters->NumLines = RTData->NumLines;
 		ShaderParameters->NumWords = RTData->NumWords;
 		ShaderParameters->bFilterWhitespaceCharactersValue = RTData->bFilterWhitespaceCharactersValue;
+		ShaderParameters->TotalTextHeight = RTData->TotalTextHeight;
 	}
 	else
 	{
@@ -843,6 +863,7 @@ void UNTTDataInterface::SetShaderParameters(const FNiagaraDataInterfaceSetShader
 		ShaderParameters->NumLines = 0;
 		ShaderParameters->NumWords = 0;
 		ShaderParameters->bFilterWhitespaceCharactersValue = bFilterWhitespaceCharacters ? 1u : 0u;
+		ShaderParameters->TotalTextHeight = 0.0f;
 	}
 }
 
@@ -949,6 +970,10 @@ void UNTTDataInterface::GetVMExternalFunction(const FVMExternalFunctionBindingIn
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetCharacterSpriteSizeVM(Context); });
 		//UE_LOG(LogNiagaraTextToolkit, Log, TEXT("NTT DI: GetVMExternalFunction - Bound function '%s'"), *BindingInfo.Name.ToString());
+	}
+	else if (BindingInfo.Name == GetTextHeightName)
+	{
+		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetTextHeightVM(Context); });
 	}
 	else
 	{
@@ -1322,6 +1347,19 @@ void UNTTDataInterface::GetCharacterSpriteSizeVM(FVectorVMExternalFunctionContex
 	}
 }
 
+void UNTTDataInterface::GetTextHeightVM(FVectorVMExternalFunctionContext& Context)
+{
+	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
+	FNDIOutputParam<float> OutTextHeight(Context);
+
+	const float Height = InstData.Get()->TotalTextHeight;
+
+	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
+	{
+		OutTextHeight.SetAndAdvance(Height);
+	}
+}
+
 #if WITH_EDITORONLY_DATA
 
 bool UNTTDataInterface::AppendCompileHash(FNiagaraCompileHashVisitor* InVisitor) const
@@ -1348,7 +1386,8 @@ bool UNTTDataInterface::GetFunctionHLSL(const FNiagaraDataInterfaceGPUParamInfo&
 		|| FunctionInfo.DefinitionName == GetWordTrailingWhitespaceCountName
 		|| FunctionInfo.DefinitionName == GetFilterWhitespaceCharactersName
 		|| FunctionInfo.DefinitionName == GetCharacterCountInWordRangeName
-		|| FunctionInfo.DefinitionName == GetCharacterCountInLineRangeName;
+		|| FunctionInfo.DefinitionName == GetCharacterCountInLineRangeName
+		|| FunctionInfo.DefinitionName == GetTextHeightName;
 }
 
 void UNTTDataInterface::GetParameterDefinitionHLSL(const FNiagaraDataInterfaceGPUParamInfo& ParamInfo, FString& OutHLSL)
@@ -1363,4 +1402,3 @@ void UNTTDataInterface::GetParameterDefinitionHLSL(const FNiagaraDataInterfaceGP
 #endif
 
 #undef LOCTEXT_NAMESPACE
-

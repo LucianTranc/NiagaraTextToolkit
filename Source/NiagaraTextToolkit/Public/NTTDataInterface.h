@@ -43,6 +43,7 @@ struct FNDIFontUVInfoInstanceData
 	TArray<int32> LineCharacterCounts;
 	TArray<int32> WordStartIndices;
 	TArray<int32> WordCharacterCounts;
+	float TotalTextHeight = 0.0f;
 	bool bFilterWhitespaceCharactersValue = true;
 };
 
@@ -69,6 +70,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 		uint32 NumLines = 0;
 		uint32 NumWords = 0;
 		uint32 bFilterWhitespaceCharactersValue = 1;
+		float TotalTextHeight = 0.0f;
 		
 		uint32 Offset_UVs = 0;
 		uint32 Offset_Sizes = 0;
@@ -87,6 +89,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 			NumLines = 0;
 			NumWords = 0;
 			bFilterWhitespaceCharactersValue = 1;
+			TotalTextHeight = 0.0f;
 		
 			Offset_UVs = 0;
 			Offset_Sizes = 0;
@@ -143,6 +146,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 		RTInstance.NumLines = (uint32)NumLines;
 		RTInstance.NumWords = (uint32)NumWords;
 		RTInstance.bFilterWhitespaceCharactersValue = InstanceDataFromGT->bFilterWhitespaceCharactersValue ? 1u : 0u;
+		RTInstance.TotalTextHeight = InstanceDataFromGT->TotalTextHeight;
 
 		// Calculate offsets (in floats) directly into the struct
 		RTInstance.Offset_UVs = 0;
@@ -296,6 +300,7 @@ public:
 		SHADER_PARAMETER(uint32, NumLines)
 		SHADER_PARAMETER(uint32, NumWords)
 		SHADER_PARAMETER(uint32, bFilterWhitespaceCharactersValue)
+		SHADER_PARAMETER(float, TotalTextHeight)
 	END_SHADER_PARAMETER_STRUCT()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Font Asset"))
@@ -358,6 +363,7 @@ public:
 	void GetCharacterCountInWordRangeVM(FVectorVMExternalFunctionContext& Context);
 	void GetCharacterCountInLineRangeVM(FVectorVMExternalFunctionContext& Context);
 	void GetCharacterSpriteSizeVM(FVectorVMExternalFunctionContext& Context);
+	void GetTextHeightVM(FVectorVMExternalFunctionContext& Context);
 
 	/** Returns the render thread proxy for this data interface. */
 	FNDIFontUVInfoProxy* GetFontProxy() const { return static_cast<FNDIFontUVInfoProxy*>(Proxy.Get()); }
@@ -375,9 +381,10 @@ private:
 	static const FName GetCharacterCountInWordRangeName;
 	static const FName GetCharacterCountInLineRangeName;
 	static const FName GetCharacterSpriteSizeName;
+	static const FName GetTextHeightName;
 
 	// Computes per-character positions in local text space using per-glyph sprite sizes in pixels.
-	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector2f>& CharacterSpriteSizes, const TArray<int32>& VerticalOffsets, int32 Kerning, float ExtraVerticalOffset, float ExtraKerningOffset, float WhitespaceWidthMultiplier, FString InputString, ENTTTextHorizontalAlignment XAlignment, ENTTTextVerticalAlignment YAlignment);
+	static TArray<FVector2f> GetCharacterPositions(const TArray<FVector2f>& CharacterSpriteSizes, const TArray<int32>& VerticalOffsets, int32 Kerning, float ExtraVerticalOffset, float ExtraKerningOffset, float WhitespaceWidthMultiplier, FString InputString, ENTTTextHorizontalAlignment XAlignment, ENTTTextVerticalAlignment YAlignment, float& OutTotalHeight);
 
 	// Extracts per-glyph sprite sizes (pixels), normalized texture UVs, vertical offsets, and global kerning from the font asset.
 	static bool GetFontInfo(const UFont* FontAsset, TArray<FVector4>& OutCharacterTextureUvs, TArray<FVector2f>& OutCharacterSpriteSizes, TArray<int32>& OutVerticalOffsets, int32& OutKerning);
@@ -395,4 +402,3 @@ private:
 	);
 
 };
-

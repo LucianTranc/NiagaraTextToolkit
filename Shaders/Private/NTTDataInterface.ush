@@ -20,6 +20,7 @@ uint {ParameterName}_NumChars;                               // Total spawnable 
 uint {ParameterName}_NumLines;                               // Total lines
 uint {ParameterName}_NumWords;                               // Total words
 uint {ParameterName}_bFilterWhitespaceCharactersValue;       // 1 if filtering whitespace characters, 0 otherwise
+float {ParameterName}_TotalTextHeight;                       // Total text height
 
 
 void GetCharacterUV_{ParameterName}(in int In_CharacterIndex, out float Out_USize, out float Out_VSize, out float Out_UStart, out float Out_VStart)
@@ -243,4 +244,10 @@ void GetCharacterCountInLineRange_{ParameterName}(in int In_StartLineIndex, in i
 	}
 
 	Out_CharacterCountInLineRange = TotalInRange;
+}
+
+// Returns the total height of the text block from the top of the first line to the bottom of the last line.
+void GetTextHeight_{ParameterName}(out float Out_TextHeight)
+{
+	Out_TextHeight = {ParameterName}_TotalTextHeight;
 }
