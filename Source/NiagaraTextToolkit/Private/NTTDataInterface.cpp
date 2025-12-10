@@ -157,43 +157,6 @@ bool UNTTDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSyste
 	InstanceData->WordCharacterCounts = MoveTemp(OutWordCharacterCounts);
 	InstanceData->TotalTextHeight = TotalTextHeight;
 
-	// PUSH TO RENDER THREAD ONCE
-	// instead of updating the render thread every tick, we do it once manually when initalizing.
-	// We don't need per tick updates since the data doesn't change over the life of the system,
-	// and if it doesn, we just call InitPerInstanceData again.
-	// We only need to do this if we have a GPU emitter in the system.
-	bool bHasGPUEmitter = false;
-	if (SystemInstance)
-	{
-		for (const auto& Emitter : SystemInstance->GetEmitters())
-		{
-			if (Emitter->GetSimTarget() == ENiagaraSimTarget::GPUComputeSim)
-			{
-				bHasGPUEmitter = true;
-				break;
-			}
-		}
-	}
-
-	if (bHasGPUEmitter)
-	{
-		FNDIFontUVInfoInstanceData* DataForRT = new FNDIFontUVInfoInstanceData(*InstanceData);
-		FNDIFontUVInfoProxy* RT_Proxy = GetFontProxy();
-		FNiagaraSystemInstanceID InstanceID = SystemInstance->GetId();
-
-		ENQUEUE_RENDER_COMMAND(InitNTTDIProxy)(
-			[RT_Proxy, DataForRT, InstanceID](FRHICommandListImmediate& RHICmdList)
-			{
-				if (RT_Proxy)
-				{
-					RT_Proxy->UpdateData_RT(DataForRT, InstanceID, RHICmdList);
-				}
-				// Clean up the copy
-				delete DataForRT;
-			}
-		);
-	}
-
 	return true;
 }
 

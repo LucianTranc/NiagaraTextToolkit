@@ -52,7 +52,7 @@ struct FNDIFontUVInfoProxy : public FNiagaraDataInterfaceProxy
 {
 	// We manage render-thread buffers explicitly via InitPerInstanceData/UpdateData_RT,
 	// so we don't need Niagara's per-frame GT->RT instance data path.
-	virtual int32 PerInstanceDataPassedToRenderThreadSize() const override { return 0; }
+	virtual int32 PerInstanceDataPassedToRenderThreadSize() const override { return sizeof(FNDIFontUVInfoInstanceData); }
 
 	virtual ~FNDIFontUVInfoProxy() override
 	{
