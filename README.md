@@ -17,6 +17,8 @@
 
 The **Niagara Text Toolkit (NTT)** is a plugin for Unreal Engine that aims to simplify the process of creating text based particle systems.
 
+YouTube video: https://www.youtube.com/watch?v=d4FTX0VgxTI
+
 The plugin provides a custom **Niagara Data Interface (NTT Data Interface)** that parses text strings and font data to generate attributes (UVs, positions, sizes) that can be assigned to particles in Niagara Scratch Modules. This allows you to display text with the full performance benifits of Niagara particle systems while being flexible and easy to use. The plugin also supports custom layout options (alignment, kerning, line spacing, word spacing), and automatically filters out whitespace from the input text.
 
 ## Installation
