@@ -136,7 +136,7 @@ To use custom fonts with the Niagara Text Toolkit, you need to create and config
 ### Using Your Custom Font
 
 1. Add the font asset to the **Font Asset** property in the NTT Data Interface in your Niagara System.
-2. Add the extracted texture to your material parameter collection or material instance.
+2. Add the extracted texture to the `NTT_FontAtlasTexture` material parameter on your Niagara sprite renderer. This can be found under Bindings > Material Parameters > Texture Parameters.
 
 ## NTT Data Interface
 
