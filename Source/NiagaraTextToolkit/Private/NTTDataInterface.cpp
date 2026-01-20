@@ -114,6 +114,8 @@ const FName UNTTDataInterface::GetCharacterCountInWordRangeName(TEXT("GetCharact
 const FName UNTTDataInterface::GetCharacterCountInLineRangeName(TEXT("GetCharacterCountInLineRange"));
 const FName UNTTDataInterface::GetCharacterSpriteSizeName(TEXT("GetCharacterSpriteSize"));
 const FName UNTTDataInterface::GetTextHeightName(TEXT("GetTextHeight"));
+const FName UNTTDataInterface::GetTextColorName(TEXT("GetTextColor"));
+const FName UNTTDataInterface::GetOutlineColorName(TEXT("GetOutlineColor"));
 
 // Creates a new data object to store our data
 bool UNTTDataInterface::InitPerInstanceData(void* PerInstanceData, FNiagaraSystemInstance* SystemInstance)
@@ -772,6 +774,28 @@ void UNTTDataInterface::GetFunctions(TArray<FNiagaraFunctionSignature>& OutFunct
 	SigTextHeight.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
 	SigTextHeight.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetFloatDef(), TEXT("TextHeight")));
 	OutFunctions.Add(SigTextHeight);
+
+	// Register GetTextColor
+	FNiagaraFunctionSignature SigTextColor;
+	SigTextColor.Name = GetTextColorName;
+#if WITH_EDITORONLY_DATA
+	SigTextColor.Description = LOCTEXT("GetTextColorDesc", "Returns the text color (set by gameplay code).");
+#endif
+	SigTextColor.bMemberFunction = true;
+	SigTextColor.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
+	SigTextColor.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetColorDef(), TEXT("TextColor")));
+	OutFunctions.Add(SigTextColor);
+
+	// Register GetOutlineColor
+	FNiagaraFunctionSignature SigOutlineColor;
+	SigOutlineColor.Name = GetOutlineColorName;
+#if WITH_EDITORONLY_DATA
+	SigOutlineColor.Description = LOCTEXT("GetOutlineColorDesc", "Returns the outline color (set by gameplay code).");
+#endif
+	SigOutlineColor.bMemberFunction = true;
+	SigOutlineColor.AddInput(FNiagaraVariable(FNiagaraTypeDefinition(GetClass()), TEXT("Font UV Information interface")));
+	SigOutlineColor.AddOutput(FNiagaraVariable(FNiagaraTypeDefinition::GetColorDef(), TEXT("OutlineColor")));
+	OutFunctions.Add(SigOutlineColor);
 }
 
 void UNTTDataInterface::BuildShaderParameters(FNiagaraShaderParametersBuilder& ShaderParametersBuilder) const
@@ -843,6 +867,8 @@ bool UNTTDataInterface::CopyToInternal(UNiagaraDataInterface* Destination) const
 		DestTyped->KerningOffset = KerningOffset;
 		DestTyped->WhitespaceWidthMultiplier = WhitespaceWidthMultiplier;
 		DestTyped->bFilterWhitespaceCharacters = bFilterWhitespaceCharacters;
+		DestTyped->TextColor = TextColor;
+		DestTyped->OutlineColor = OutlineColor;
 		return true;
 	}
 	else
@@ -863,7 +889,9 @@ bool UNTTDataInterface::Equals(const UNiagaraDataInterface* Other) const
 		&& OtherTyped->VerticalOffset == VerticalOffset
 		&& OtherTyped->KerningOffset == KerningOffset
 		&& OtherTyped->WhitespaceWidthMultiplier == WhitespaceWidthMultiplier
-		&& OtherTyped->bFilterWhitespaceCharacters == bFilterWhitespaceCharacters;
+		&& OtherTyped->bFilterWhitespaceCharacters == bFilterWhitespaceCharacters
+		&& OtherTyped->TextColor == TextColor
+		&& OtherTyped->OutlineColor == OutlineColor;
 		UE_LOG(LogNiagaraTextToolkit, Verbose, TEXT("NTT DI: Equals - ThisAsset=%s OtherAsset=%s Result=%s"),
 		*GetNameSafe(FontAsset),
 		OtherTyped ? *GetNameSafe(OtherTyped->FontAsset) : TEXT("nullptr"),
@@ -937,6 +965,14 @@ void UNTTDataInterface::GetVMExternalFunction(const FVMExternalFunctionBindingIn
 	else if (BindingInfo.Name == GetTextHeightName)
 	{
 		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetTextHeightVM(Context); });
+	}
+	else if (BindingInfo.Name == GetTextColorName)
+	{
+		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetTextColorVM(Context); });
+	}
+	else if (BindingInfo.Name == GetOutlineColorName)
+	{
+		OutFunc = FVMExternalFunction::CreateLambda([this](FVectorVMExternalFunctionContext& Context) { this->GetOutlineColorVM(Context); });
 	}
 	else
 	{
@@ -1363,5 +1399,39 @@ void UNTTDataInterface::GetParameterDefinitionHLSL(const FNiagaraDataInterfaceGP
 }
 
 #endif
+
+void UNTTDataInterface::GetTextColorVM(FVectorVMExternalFunctionContext& Context)
+{
+	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
+	VectorVM::FExternalFuncRegisterHandler<float> OutR(Context);
+	VectorVM::FExternalFuncRegisterHandler<float> OutG(Context);
+	VectorVM::FExternalFuncRegisterHandler<float> OutB(Context);
+	VectorVM::FExternalFuncRegisterHandler<float> OutA(Context);
+
+	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
+	{
+		*OutR.GetDestAndAdvance() = TextColor.R;
+		*OutG.GetDestAndAdvance() = TextColor.G;
+		*OutB.GetDestAndAdvance() = TextColor.B;
+		*OutA.GetDestAndAdvance() = TextColor.A;
+	}
+}
+
+void UNTTDataInterface::GetOutlineColorVM(FVectorVMExternalFunctionContext& Context)
+{
+	VectorVM::FUserPtrHandler<FNDIFontUVInfoInstanceData> InstData(Context);
+	VectorVM::FExternalFuncRegisterHandler<float> OutR(Context);
+	VectorVM::FExternalFuncRegisterHandler<float> OutG(Context);
+	VectorVM::FExternalFuncRegisterHandler<float> OutB(Context);
+	VectorVM::FExternalFuncRegisterHandler<float> OutA(Context);
+
+	for (int32 i = 0; i < Context.GetNumInstances(); ++i)
+	{
+		*OutR.GetDestAndAdvance() = OutlineColor.R;
+		*OutG.GetDestAndAdvance() = OutlineColor.G;
+		*OutB.GetDestAndAdvance() = OutlineColor.B;
+		*OutA.GetDestAndAdvance() = OutlineColor.A;
+	}
+}
 
 #undef LOCTEXT_NAMESPACE

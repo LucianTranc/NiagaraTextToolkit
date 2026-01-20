@@ -156,6 +156,8 @@ The core feature of this plugin is the `NTT Data Interface`, which can be added 
 | **Kerning Offset** | Adds additional spacing between characters (kerning). |
 | **Whitespace Width Multiplier** | Multiplies the width of whitespace characters (useful for adjusting word spacing). |
 | **Filter Whitespace Characters** | If enabled, whitespace characters are excluded from the list of valid particle positions (prevents spawning invisible particles). |
+| **Text Color** | The text color. |
+| **Outline Color (A=Width)** | The outline color. Alpha channel is used as the outline width (0 = no outline). |
 
 ### Exposed Functions (Niagara)
 
@@ -220,6 +222,14 @@ These functions are available within Niagara Modules (Scratch Pad or Script) whe
 - **GetFilterWhitespaceCharacters**
   - *Outputs*: `FilterWhitespaceCharacters` (bool)
   - *Description*: Returns the current state of the whitespace filter setting.
+
+- **GetTextColor**
+  - *Outputs*: `TextColor` (LinearColor)
+  - *Description*: Returns the text color set on the Data Interface (for use in materials/renderers).
+
+- **GetOutlineColor**
+  - *Outputs*: `OutlineColor` (LinearColor)
+  - *Description*: Returns the outline color. The Alpha channel (A) is used as the outline width (0 = no outline).
 
 ## Blueprint Library
 
