@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+//Copyright Tranc Software, Inc. All Rights Reserved (2026)
 
 // NiagaraTextToolkit.cpp
 

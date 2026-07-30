@@ -1,10 +1,11 @@
-// Property of Lucian Tranc
+//Copyright Tranc Software, Inc. All Rights Reserved (2026)
 
 #pragma once
 
 #include "NiagaraDataInterface.h"
 #include "VectorVM.h"
 #include "Engine/Font.h"
+#include "RHIUtilities.h"
 #include "NTTDataInterface.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogNiagaraTextToolkit, Log, All);
@@ -305,32 +306,32 @@ public:
 		SHADER_PARAMETER(float, TotalTextHeight)
 	END_SHADER_PARAMETER_STRUCT()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Font Asset"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Niagara Text Toolkit", meta = (DisplayName = "Font Asset"))
 	UFont* FontAsset = nullptr;
 
 	// The input text to compute character positions for; converted to Unicode and character positions per instance
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Input Text", MultiLine = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Niagara Text Toolkit", meta = (DisplayName = "Input Text", MultiLine = "true"))
 	FString InputText;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Horizontal Alignment"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Niagara Text Toolkit", meta = (DisplayName = "Horizontal Alignment"))
 	ENTTTextHorizontalAlignment HorizontalAlignment = ENTTTextHorizontalAlignment::NTT_THA_Center;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (DisplayName = "Vertical Alignment"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Niagara Text Toolkit", meta = (DisplayName = "Vertical Alignment"))
 	ENTTTextVerticalAlignment VerticalAlignment = ENTTTextVerticalAlignment::NTT_TVA_Center;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Vertical Offset"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "Niagara Text Toolkit", meta = (DisplayName = "Vertical Offset"))
 	float VerticalOffset = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Kerning Offset"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "Niagara Text Toolkit", meta = (DisplayName = "Kerning Offset"))
 	float KerningOffset = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Whitespace Width Multiplier"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "Niagara Text Toolkit", meta = (DisplayName = "Whitespace Width Multiplier"))
 	float WhitespaceWidthMultiplier = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Filter Whitespace Characters"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "Niagara Text Toolkit", meta = (DisplayName = "Filter Whitespace Characters"))
 	bool bFilterWhitespaceCharacters = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, meta = (DisplayName = "Average Position"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, AdvancedDisplay, Category = "Niagara Text Toolkit", meta = (DisplayName = "Average Position"))
 	bool bAveragePosition = false;
 
 	//UObject Interface

@@ -6,6 +6,8 @@
 	"Description": "A plugin for animating text on a per character basis with Niagara",
 	"Category": "Niagara",
 	"CreatedBy": "Lucian Tranc",
+	"EngineVersion": "5.3",
+	"FabURL": "com.epicgames.launcher://ue/Fab/product/4345b971-81ee-4840-88a7-5d53762abc7a",
 	"CreatedByURL": "",
 	"DocsURL": "",
 	"MarketplaceURL": "",
@@ -24,12 +26,24 @@
 		{
 			"Name": "NiagaraTextToolkit",
 			"Type": "Runtime",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"IOS",
+				"Android",
+				"Linux"
+			]
 		},
 		{
 			"Name": "NiagaraTextToolkitEditor",
 			"Type": "Editor",
-			"LoadingPhase": "Default"
+			"LoadingPhase": "Default",
+			"PlatformAllowList": [
+				"Win64",
+				"Mac",
+				"Linux"
+			]
 		}
 	]
 }

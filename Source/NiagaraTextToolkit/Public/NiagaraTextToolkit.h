@@ -1,4 +1,4 @@
-// Made by Lucian Tranc
+//Copyright Tranc Software, Inc. All Rights Reserved (2026)
 
 #pragma once
 

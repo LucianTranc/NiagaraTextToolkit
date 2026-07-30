@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+//Copyright Tranc Software, Inc. All Rights Reserved (2026)
 
 using UnrealBuildTool;
 
@@ -28,6 +28,7 @@ public class NiagaraTextToolkit : ModuleRules
 				"Core",
                 "Niagara",
 				"NiagaraShader",
+				"RHI",
 				// ... add other public dependencies that you statically link with here ...
 			}
             );
@@ -38,7 +39,6 @@ public class NiagaraTextToolkit : ModuleRules
 			{
 				"CoreUObject",
 				"Engine",
-				"RHI",
 				"Niagara",
                 "RenderCore",
 				"NiagaraCore",

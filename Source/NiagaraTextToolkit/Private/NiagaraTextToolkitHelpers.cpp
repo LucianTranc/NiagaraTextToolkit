@@ -1,4 +1,4 @@
-// Property of Lucian Tranc
+//Copyright Tranc Software, Inc. All Rights Reserved (2026)
 
 #include "NiagaraTextToolkitHelpers.h"
 

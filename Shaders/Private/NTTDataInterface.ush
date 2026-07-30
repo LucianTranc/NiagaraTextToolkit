@@ -1,4 +1,4 @@
-// Property of Lucian Tranc
+//Copyright Tranc Software, Inc. All Rights Reserved (2026)
 
 // When using a template ush file, we need the _{ParameterName} appendix on
 // global functions and parameters, because the template can be included multiple

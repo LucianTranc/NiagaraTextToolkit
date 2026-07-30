@@ -1,4 +1,4 @@
-// Property of Lucian Tranc
+//Copyright Tranc Software, Inc. All Rights Reserved (2026)
 
 #include "NTTDataInterface.h"
 #include "NiagaraCompileHashVisitor.h"
@@ -10,6 +10,7 @@
 #include "NiagaraDataInterfaceUtilities.h"
 #include "RHI.h"
 #include "VectorVM.h"
+#include "Engine/Texture2D.h"
 
 DEFINE_LOG_CATEGORY(LogNiagaraTextToolkit);
 
